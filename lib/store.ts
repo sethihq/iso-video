@@ -52,6 +52,7 @@ interface EditorState {
   selectedStyleId: string;
   baseDuration: number; // Base duration in ms (modified by style)
   selectedSectionIds: string[]; // Which sections are selected for video
+  isManualMode: boolean; // Manual upload mode vs URL capture
 
   // Actions - Project
   setUrl: (url: string) => void;
@@ -101,6 +102,8 @@ interface EditorState {
   selectAllSections: () => void;
   deselectAllSections: () => void;
   generateVideoFromSections: () => void;
+  setManualMode: (manual: boolean) => void;
+  addManualScreens: (files: File[]) => Promise<void>;
 
   // Actions - Camera & DOF
   updateGlobalCamera: (camera: Partial<GlobalCameraSettings>) => void;
@@ -125,6 +128,7 @@ export const useEditorStore = create<EditorState>()(
       selectedStyleId: DEFAULT_STYLE.id,
       baseDuration: 3000,
       selectedSectionIds: [],
+      isManualMode: false,
 
       // Project actions
       setUrl: (url) =>
@@ -498,6 +502,83 @@ export const useEditorStore = create<EditorState>()(
         setTimeout(() => {
           get().calculateSceneZDepths();
         }, 50);
+      },
+
+      setManualMode: (manual) => set({ isManualMode: manual }),
+
+      addManualScreens: async (files: File[]) => {
+        const state = get();
+        const style = getPresetById(state.selectedStyleId);
+        const screens: Screen[] = [];
+        const scenes: Scene[] = [];
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const imageUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          });
+
+          // Get image dimensions
+          const img = new Image();
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.src = imageUrl;
+          });
+
+          const screenId = `screen-${Date.now()}-${i}`;
+          const sceneId = `scene-${Date.now()}-${i}`;
+
+          const screen: Screen = {
+            id: screenId,
+            url: 'manual-upload',
+            scrollY: 0,
+            imageUrl,
+            thumbnail: imageUrl,
+            width: img.width,
+            height: img.height,
+            section: 'custom',
+          };
+
+          const totalSections = files.length;
+          const transform = style.getTransform(i, totalSections, 'content');
+          const motion = style.getMotion(i, totalSections, 'content');
+          const duration = style.getDuration('content', state.baseDuration);
+          const camera = style.getCameraSettings
+            ? style.getCameraSettings(i, totalSections, 'content')
+            : { ...DEFAULT_SECTION_CAMERA };
+
+          const scene: Scene = {
+            id: sceneId,
+            screenId,
+            duration,
+            transform,
+            motion,
+            transition: { ...DEFAULT_TRANSITION },
+            order: i,
+            camera,
+            zDepth: -i * state.project.settings.globalCamera.zSpacing,
+          };
+
+          screens.push(screen);
+          scenes.push(scene);
+        }
+
+        set((state) => ({
+          project: {
+            ...state.project,
+            screens: [...state.project.screens, ...screens],
+            scenes: [...state.project.scenes, ...scenes],
+            updatedAt: Date.now(),
+          },
+          selectedSceneId: scenes[0]?.id || state.selectedSceneId,
+        }));
+
+        // Auto-play after adding
+        setTimeout(() => {
+          get().play();
+        }, 300);
       },
 
       // Camera & DOF actions

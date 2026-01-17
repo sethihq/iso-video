@@ -9,6 +9,10 @@ import {
   Sparkles,
   Clock,
   Move3d,
+  Music,
+  Upload,
+  Trash2,
+  Volume2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -57,12 +61,12 @@ const EASING_OPTIONS: { value: EasingType; label: string }[] = [
   { value: 'spring', label: 'Spring' },
 ];
 
-type TabType = 'style' | 'camera' | 'effects';
+type TabType = 'style' | 'camera' | 'audio';
 
 const TABS: { id: TabType; label: string; icon: typeof Sparkles }[] = [
   { id: 'style', label: 'Style', icon: Sparkles },
   { id: 'camera', label: 'Camera', icon: Camera },
-  { id: 'effects', label: 'Effects', icon: SlidersHorizontal },
+  { id: 'audio', label: 'Audio', icon: Music },
 ];
 
 export function ControlsPanel() {
@@ -78,6 +82,9 @@ export function ControlsPanel() {
     updateSceneCamera,
     updateGlobalCamera,
     updateDOFSettings,
+    addAudioTrack,
+    removeAudioTrack,
+    updateAudioTrack,
   } = useEditorStore();
 
   if (!selectedScene) {
@@ -442,14 +449,110 @@ export function ControlsPanel() {
             </motion.div>
           )}
 
-          {activeTab === 'effects' && (
+          {activeTab === 'audio' && (
             <motion.div
-              key="effects"
+              key="audio"
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               className="p-4 space-y-5"
             >
+              {/* Audio Upload */}
+              <Section title="Background Music" icon={Music}>
+                <div className="space-y-3">
+                  {project.audioTracks.length === 0 ? (
+                    <label
+                      htmlFor="audio-upload"
+                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">Upload audio</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">MP3, WAV, OGG</p>
+                      </div>
+                      <input
+                        id="audio-upload"
+                        type="file"
+                        className="hidden"
+                        accept="audio/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+
+                          const url = await new Promise<string>((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result as string);
+                            reader.readAsDataURL(file);
+                          });
+
+                          // Get audio duration
+                          const audio = new Audio(url);
+                          await new Promise<void>((resolve) => {
+                            audio.onloadedmetadata = () => resolve();
+                          });
+
+                          addAudioTrack({
+                            id: `audio-${Date.now()}`,
+                            name: file.name,
+                            url,
+                            duration: audio.duration * 1000,
+                            startTime: 0,
+                            volume: 0.8,
+                          });
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div className="space-y-2">
+                      {project.audioTracks.map((track) => (
+                        <div
+                          key={track.id}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border"
+                        >
+                          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                            <Music className="w-4 h-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{track.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {Math.floor(track.duration / 1000)}s
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => removeAudioTrack(track.id)}
+                            className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Section>
+
+              {/* Volume Control */}
+              {project.audioTracks.length > 0 && (
+                <Section title="Volume" icon={Volume2}>
+                  <div className="space-y-3">
+                    {project.audioTracks.map((track) => (
+                      <CustomSlider
+                        key={track.id}
+                        label={track.name.slice(0, 20)}
+                        value={track.volume * 100}
+                        min={0}
+                        max={100}
+                        step={1}
+                        valueSubtext="%"
+                        onChange={(v) => updateAudioTrack(track.id, { volume: v / 100 })}
+                      />
+                    ))}
+                  </div>
+                </Section>
+              )}
+
               {/* Depth of Field */}
               <Section title="Depth of Field">
                 <div className="space-y-3">
@@ -484,13 +587,6 @@ export function ControlsPanel() {
                   )}
                 </div>
               </Section>
-
-              {/* Placeholder for future effects */}
-              <div className="p-4 rounded-lg border border-dashed border-border text-center">
-                <p className="text-xs text-muted-foreground">
-                  More effects coming soon
-                </p>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>

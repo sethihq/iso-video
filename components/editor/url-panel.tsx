@@ -11,6 +11,8 @@ import {
   Scan,
   Layers,
   Wand2,
+  Upload,
+  ImagePlus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -75,6 +77,7 @@ export function UrlPanel() {
     selectedSectionIds,
     selectedStyleId,
     baseDuration,
+    isManualMode,
     setCapturedPage,
     toggleSectionSelection,
     selectAllSections,
@@ -82,6 +85,8 @@ export function UrlPanel() {
     setSelectedStyle,
     setBaseDuration,
     generateVideoFromSections,
+    setManualMode,
+    addManualScreens,
     project,
   } = useEditorStore();
 
@@ -155,17 +160,47 @@ export function UrlPanel() {
     setError(null);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setError('Please select image files');
+      return;
+    }
+
+    setError(null);
+    await addManualScreens(imageFiles);
+    setStep('ready');
+  };
+
   return (
     <div className="flex h-full w-full flex-col bg-card">
       {/* Header */}
       <div className="border-b border-border p-4">
-        <h2 className="text-sm font-medium text-foreground">
-          {step === 'url' && 'Enter Website URL'}
-          {step === 'sections' && 'Select Sections'}
-          {step === 'ready' && 'Video Ready'}
-        </h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          {step === 'url' && 'Paste any website URL to get started'}
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium text-foreground">
+            {step === 'url' && (isManualMode ? 'Upload Screenshots' : 'Enter Website URL')}
+            {step === 'sections' && 'Select Sections'}
+            {step === 'ready' && 'Video Ready'}
+          </h2>
+          {step === 'url' && (
+            <button
+              onClick={() => setManualMode(!isManualMode)}
+              className={cn(
+                'text-[10px] px-2 py-1 rounded-full transition-colors',
+                isManualMode
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {isManualMode ? 'URL Mode' : 'Manual'}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {step === 'url' && (isManualMode ? 'Upload your own screenshots' : 'Paste any website URL to get started')}
           {step === 'sections' && 'Choose which sections to include'}
           {step === 'ready' && 'Your video is ready to preview and export'}
         </p>
@@ -182,44 +217,100 @@ export function UrlPanel() {
               exit={{ opacity: 0 }}
               className="p-4 space-y-4"
             >
-              {/* URL Input */}
-              <div className="space-y-2">
-                <div className="relative">
-                  <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    type="text"
-                    placeholder="example.com"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCapture()}
-                    className="pl-9"
-                    autoComplete="url"
-                    spellCheck={false}
-                  />
-                </div>
-                {error && (
-                  <p className="text-xs text-destructive">{error}</p>
-                )}
-              </div>
+              {isManualMode ? (
+                <>
+                  {/* Manual Upload */}
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="screenshot-upload"
+                      className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <ImagePlus className="w-8 h-8 mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WebP</p>
+                      </div>
+                      <input
+                        id="screenshot-upload"
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        multiple
+                        onChange={handleFileUpload}
+                      />
+                    </label>
+                    {error && (
+                      <p className="text-xs text-destructive">{error}</p>
+                    )}
+                  </div>
 
-              <Button
-                onClick={handleCapture}
-                disabled={!url.trim() || isCapturing}
-                className="w-full"
-                size="lg"
-              >
-                {isCapturing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {CAPTURE_STEPS[captureStep]?.label || 'Processing'}...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Capture & Detect Sections
-                  </>
-                )}
-              </Button>
+                  {/* Style selector for manual mode */}
+                  <div className="pt-4 border-t border-border">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Video Style
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {VIDEO_STYLE_PRESETS.slice(0, 4).map((preset) => (
+                        <button
+                          key={preset.id}
+                          onClick={() => setSelectedStyle(preset.id)}
+                          className={cn(
+                            'p-2 rounded-lg border text-left transition-all',
+                            selectedStyleId === preset.id
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                              : 'border-border hover:border-primary/50'
+                          )}
+                        >
+                          <div className="text-xs font-medium">{preset.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* URL Input */}
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="example.com"
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCapture()}
+                        className="pl-9"
+                        autoComplete="url"
+                        spellCheck={false}
+                      />
+                    </div>
+                    {error && (
+                      <p className="text-xs text-destructive">{error}</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handleCapture}
+                    disabled={!url.trim() || isCapturing}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {isCapturing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {CAPTURE_STEPS[captureStep]?.label || 'Processing'}...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        Capture & Detect Sections
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
 
               {/* Capture Progress */}
               <AnimatePresence>
@@ -279,23 +370,25 @@ export function UrlPanel() {
               </AnimatePresence>
 
               {/* How it works */}
-              <div className="pt-4 border-t border-border">
-                <h3 className="text-xs font-medium text-muted-foreground mb-3">How it works</h3>
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  <div className="flex gap-2">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">1</span>
-                    <span>Paste any website URL</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">2</span>
-                    <span>We detect hero, features, pricing, etc.</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">3</span>
-                    <span>Click Generate - done!</span>
+              {!isManualMode && (
+                <div className="pt-4 border-t border-border">
+                  <h3 className="text-xs font-medium text-muted-foreground mb-3">How it works</h3>
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <div className="flex gap-2">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">1</span>
+                      <span>Paste any website URL</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">2</span>
+                      <span>We detect hero, features, pricing, etc.</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">3</span>
+                      <span>Click Generate - done!</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 
