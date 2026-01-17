@@ -15,7 +15,23 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'ISO Video - Isometric Website Video Generator',
-  description: 'Transform website screenshots into stunning isometric videos',
+  description: 'Transform website screenshots into stunning isometric videos with cinematic 3D effects',
+  keywords: ['video generator', 'website screenshot', 'isometric', '3D video', 'product demo'],
+  authors: [{ name: 'Sethi HQ' }],
+  openGraph: {
+    title: 'ISO Video - Isometric Website Video Generator',
+    description: 'Transform website screenshots into stunning isometric videos with cinematic 3D effects',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ISO Video - Isometric Website Video Generator',
+    description: 'Transform website screenshots into stunning isometric videos with cinematic 3D effects',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

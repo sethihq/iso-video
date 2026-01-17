@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ISO Video
+
+Transform website screenshots into stunning isometric videos with cinematic 3D effects.
+
+## Features
+
+- **Website Capture**: Enter any URL to capture full-page screenshots with automatic section detection
+- **Isometric 3D Preview**: Real-time preview with customizable rotation, scale, and perspective
+- **Timeline Editor**: Drag-and-drop scene reordering with playback controls
+- **Multiple Presets**: Product Hunt, Dynamic, Social, and custom styles
+- **Video Export**: High-quality MP4 export with smooth transitions
+- **Dark/Light Theme**: System-aware theme with manual toggle
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/sethihq/iso-video.git
+cd iso-video
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+cp .env.example .env.local
+
+# Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Usage
 
-To learn more about Next.js, take a look at the following resources:
+1. **Enter a URL**: Paste any website URL in the input field
+2. **Capture**: Click "Capture" to screenshot the website sections
+3. **Customize**: Adjust timing, transitions, and visual settings
+4. **Preview**: Use playback controls to preview the video
+5. **Export**: Click "Export" to download the MP4 video
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tech Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Framework**: Next.js 15 with App Router
+- **Styling**: Tailwind CSS
+- **State Management**: Zustand
+- **Drag & Drop**: dnd-kit
+- **Screenshots**: Puppeteer
+- **Video Export**: WebCodecs API
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause |
+| `R` | Reset to start |
+| `Left Arrow` | Previous scene |
+| `Right Arrow` | Next scene |
+| `E` | Export video |
+| `?` | Show shortcuts |
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/sethihq/iso-video)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+MIT
