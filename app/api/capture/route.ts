@@ -1,6 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 import sharp from 'sharp';
+
+// Get browser executable path based on environment
+const getBrowser = async () => {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    // Serverless environment - use @sparticuz/chromium
+    const chromium = await import('@sparticuz/chromium');
+    return puppeteer.launch({
+      args: chromium.default.args,
+      executablePath: await chromium.default.executablePath(),
+      headless: true,
+    });
+  } else {
+    // Local development - use system Chrome
+    const executablePath = process.platform === 'darwin'
+      ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+      : process.platform === 'win32'
+      ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+      : '/usr/bin/google-chrome';
+
+    return puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--font-render-hinting=none',
+      ],
+    });
+  }
+};
 
 interface CaptureRequest {
   url: string;
@@ -32,15 +63,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-web-security',
-        '--font-render-hinting=none', // Smoother font rendering
-      ],
-    });
+    const browser = await getBrowser();
 
     const page = await browser.newPage();
 

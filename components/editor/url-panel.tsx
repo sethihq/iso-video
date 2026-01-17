@@ -4,14 +4,10 @@ import { useState } from 'react';
 import {
   Globe,
   Loader2,
-  Sparkles,
   Check,
-  X,
-  RefreshCw,
   Scan,
   Layers,
   Wand2,
-  Upload,
   ImagePlus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -334,10 +330,7 @@ export function UrlPanel() {
                         {CAPTURE_STEPS[captureStep]?.label || 'Processing'}...
                       </>
                     ) : (
-                      <>
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Capture & Detect Sections
-                      </>
+                      'Capture Website'
                     )}
                   </Button>
                 </>
@@ -407,15 +400,15 @@ export function UrlPanel() {
                   <div className="space-y-2 text-xs text-muted-foreground">
                     <div className="flex gap-2">
                       <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">1</span>
-                      <span>Paste any website URL</span>
+                      <span>Paste a website URL</span>
                     </div>
                     <div className="flex gap-2">
                       <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">2</span>
-                      <span>We detect hero, features, pricing, etc.</span>
+                      <span>Select which sections to include</span>
                     </div>
                     <div className="flex gap-2">
                       <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium">3</span>
-                      <span>Click Generate - done!</span>
+                      <span>Export as video</span>
                     </div>
                   </div>
                 </div>
@@ -612,8 +605,7 @@ export function UrlPanel() {
                     onClick={handleReset}
                     className="w-full"
                   >
-                    <X className="mr-1 h-4 w-4" />
-                    Start Over
+                    Cancel
                   </Button>
                 </motion.div>
                 <motion.div
@@ -625,8 +617,7 @@ export function UrlPanel() {
                     disabled={selectedSectionIds.length === 0}
                     className="w-full"
                   >
-                    <Sparkles className="mr-1 h-4 w-4" />
-                    Generate
+                    Create Video
                   </Button>
                 </motion.div>
               </div>
@@ -703,8 +694,7 @@ export function UrlPanel() {
                   onClick={handleReset}
                   className="flex-1"
                 >
-                  <RefreshCw className="mr-1 h-4 w-4" />
-                  New Video
+                  Start New
                 </Button>
               </div>
             </motion.div>
