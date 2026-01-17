@@ -197,7 +197,7 @@ export const ISOMETRIC_PRESETS: IsometricPreset[] = [
       rotateY: -45,
       rotateZ: 0,
       perspective: 1000,
-      scale: 0.8,
+      scale: 1,
       translateX: 0,
       translateY: 0,
       translateZ: 0,
@@ -211,7 +211,7 @@ export const ISOMETRIC_PRESETS: IsometricPreset[] = [
       rotateY: 45,
       rotateZ: 0,
       perspective: 1000,
-      scale: 0.8,
+      scale: 1,
       translateX: 0,
       translateY: 0,
       translateZ: 0,
@@ -225,7 +225,7 @@ export const ISOMETRIC_PRESETS: IsometricPreset[] = [
       rotateY: 0,
       rotateZ: -45,
       perspective: 1200,
-      scale: 0.7,
+      scale: 1,
       translateX: 0,
       translateY: 0,
       translateZ: 0,
@@ -253,7 +253,7 @@ export const ISOMETRIC_PRESETS: IsometricPreset[] = [
       rotateY: -20,
       rotateZ: 0,
       perspective: 1500,
-      scale: 0.9,
+      scale: 1,
       translateX: 0,
       translateY: 0,
       translateZ: 0,
@@ -267,7 +267,7 @@ export const ISOMETRIC_PRESETS: IsometricPreset[] = [
       rotateY: -15,
       rotateZ: 2,
       perspective: 1800,
-      scale: 0.85,
+      scale: 1,
       translateX: 0,
       translateY: 0,
       translateZ: 0,
@@ -358,7 +358,7 @@ export function createScene(screenId: string, order: number): Scene {
 // Export Types
 // ============================================
 
-export type ExportFormat = 'mp4' | 'webm' | 'gif';
+export type ExportFormat = 'webm' | 'gif';
 export type ExportQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 export interface ExportPreset {
@@ -389,7 +389,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '16:9',
     resolution: '1080p',
     fps: 30,
-    format: 'mp4',
+    format: 'webm',
     quality: 'high',
   },
   {
@@ -399,7 +399,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '1:1',
     resolution: '1080p',
     fps: 30,
-    format: 'mp4',
+    format: 'webm',
     quality: 'high',
   },
   {
@@ -409,7 +409,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '1:1',
     resolution: '1080p',
     fps: 30,
-    format: 'mp4',
+    format: 'webm',
     quality: 'high',
   },
   {
@@ -419,7 +419,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '9:16',
     resolution: '1080p',
     fps: 30,
-    format: 'mp4',
+    format: 'webm',
     quality: 'high',
   },
   {
@@ -429,7 +429,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '16:9',
     resolution: '1080p',
     fps: 60,
-    format: 'mp4',
+    format: 'webm',
     quality: 'ultra',
   },
   {
@@ -445,7 +445,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
 ];
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
-  format: 'mp4',
+  format: 'webm',
   quality: 'high',
   resolution: '1080p',
   aspectRatio: '16:9',

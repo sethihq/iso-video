@@ -2,13 +2,18 @@
  * High-Quality Video Export
  *
  * Renders scenes with proper transforms and high-quality images.
+ * Supports WebM video and GIF formats.
  */
+
+import GIF from 'gif.js-upgrade';
+import { ExportFormat } from './types';
 
 export interface ExportOptions {
   width: number;
   height: number;
   fps: number;
   quality: 'low' | 'medium' | 'high' | 'ultra';
+  format: ExportFormat;
   onProgress?: (progress: number) => void;
 }
 
@@ -29,6 +34,14 @@ const QUALITY_BITRATE: Record<string, number> = {
   medium: 8_000_000,
   high: 16_000_000,
   ultra: 32_000_000,
+};
+
+// GIF quality settings (lower = better quality, slower)
+const GIF_QUALITY: Record<string, number> = {
+  low: 20,
+  medium: 10,
+  high: 5,
+  ultra: 1,
 };
 
 /**
@@ -53,7 +66,7 @@ function drawSceneFrame(
   width: number,
   height: number,
   transform: SceneExportData['transform'],
-  progress: number // 0-1 for animation timing
+  _progress: number // 0-1 for animation timing
 ) {
   // Clear with background
   ctx.fillStyle = '#0a0a0a';
@@ -166,25 +179,21 @@ function drawTransitionFrame(
 }
 
 /**
- * Main export function - creates high-quality video from scenes
+ * Export as WebM video using MediaRecorder
  */
-export async function exportScenesAsVideo(
+async function exportAsWebM(
   scenes: SceneExportData[],
   options: ExportOptions
 ): Promise<Blob> {
   const { width, height, fps, quality, onProgress } = options;
 
-  if (scenes.length === 0) {
-    throw new Error('No scenes to export');
-  }
-
-  // Create high-DPI canvas
+  // Create canvas
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d', {
     alpha: false,
-    desynchronized: true // Better performance
+    desynchronized: true
   })!;
 
   // Check browser support
@@ -205,21 +214,21 @@ export async function exportScenesAsVideo(
     if (e.data.size > 0) chunks.push(e.data);
   };
 
-  // Pre-load all images for smooth playback
+  // Pre-load all images
   onProgress?.(0);
   const images: HTMLImageElement[] = [];
 
   for (let i = 0; i < scenes.length; i++) {
     const img = await loadImage(scenes[i].imageUrl);
     images.push(img);
-    onProgress?.(((i + 1) / scenes.length) * 10); // First 10% is loading
+    onProgress?.(((i + 1) / scenes.length) * 10);
   }
 
   // Calculate total frames
   const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
   const frameDuration = 1000 / fps;
   const totalFrames = Math.ceil(totalDuration / frameDuration);
-  const transitionDuration = 300; // 300ms transitions
+  const transitionDuration = 300;
 
   // Start recording
   mediaRecorder.start(100);
@@ -248,34 +257,29 @@ export async function exportScenesAsVideo(
     const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
 
     if (isInEntryTransition) {
-      // Transition from previous scene
       const transitionProgress = sceneTime / transitionDuration;
       const prevImg = images[currentSceneIndex - 1];
       const prevTransform = scenes[currentSceneIndex - 1].transform;
       drawTransitionFrame(ctx, prevImg, img, width, height, prevTransform, scene.transform, transitionProgress);
     } else if (isInExitTransition) {
-      // Transition to next scene
       const timeIntoTransition = sceneTime - (scene.duration - transitionDuration);
       const transitionProgress = timeIntoTransition / transitionDuration;
       const nextImg = images[currentSceneIndex + 1];
       const nextTransform = scenes[currentSceneIndex + 1].transform;
       drawTransitionFrame(ctx, img, nextImg, width, height, scene.transform, nextTransform, transitionProgress);
     } else {
-      // Normal scene rendering
       drawSceneFrame(ctx, img, width, height, scene.transform, sceneProgress);
     }
 
-    // Wait for frame timing (but not too long to avoid slow exports)
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
     currentTime += frameDuration;
-    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 85); // 10-95% is rendering
+    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 85);
   }
 
   // Stop recording
   mediaRecorder.stop();
 
-  // Wait for final data
   return new Promise((resolve, reject) => {
     mediaRecorder.onstop = () => {
       try {
@@ -288,6 +292,133 @@ export async function exportScenesAsVideo(
     };
     mediaRecorder.onerror = (e) => reject(e);
   });
+}
+
+/**
+ * Export as GIF using gif.js
+ */
+async function exportAsGIF(
+  scenes: SceneExportData[],
+  options: ExportOptions
+): Promise<Blob> {
+  const { width, height, fps, quality, onProgress } = options;
+
+  // Use lower resolution for GIF to keep file size manageable
+  const gifWidth = Math.min(width, 800);
+  const gifHeight = Math.round(gifWidth * (height / width));
+
+  // Lower FPS for GIF (max 15 fps for reasonable file size)
+  const gifFps = Math.min(fps, 15);
+
+  // Create canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = gifWidth;
+  canvas.height = gifHeight;
+  const ctx = canvas.getContext('2d', { alpha: false })!;
+
+  // Create GIF encoder
+  const gif = new GIF({
+    workers: 2,
+    quality: GIF_QUALITY[quality],
+    width: gifWidth,
+    height: gifHeight,
+    workerScript: '/gif.worker.js',
+  });
+
+  // Pre-load all images
+  onProgress?.(0);
+  const images: HTMLImageElement[] = [];
+
+  for (let i = 0; i < scenes.length; i++) {
+    const img = await loadImage(scenes[i].imageUrl);
+    images.push(img);
+    onProgress?.(((i + 1) / scenes.length) * 10);
+  }
+
+  // Calculate frames
+  const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
+  const frameDuration = 1000 / gifFps;
+  const totalFrames = Math.ceil(totalDuration / frameDuration);
+  const transitionDuration = 300;
+
+  let currentTime = 0;
+  let currentSceneIndex = 0;
+  let sceneStartTime = 0;
+
+  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+    // Find current scene
+    while (
+      currentSceneIndex < scenes.length - 1 &&
+      currentTime >= sceneStartTime + scenes[currentSceneIndex].duration
+    ) {
+      sceneStartTime += scenes[currentSceneIndex].duration;
+      currentSceneIndex++;
+    }
+
+    const scene = scenes[currentSceneIndex];
+    const img = images[currentSceneIndex];
+    const sceneTime = currentTime - sceneStartTime;
+    const sceneProgress = sceneTime / scene.duration;
+
+    // Check transitions
+    const isInEntryTransition = sceneTime < transitionDuration && currentSceneIndex > 0;
+    const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
+
+    if (isInEntryTransition) {
+      const transitionProgress = sceneTime / transitionDuration;
+      const prevImg = images[currentSceneIndex - 1];
+      const prevTransform = scenes[currentSceneIndex - 1].transform;
+      drawTransitionFrame(ctx, prevImg, img, gifWidth, gifHeight, prevTransform, scene.transform, transitionProgress);
+    } else if (isInExitTransition) {
+      const timeIntoTransition = sceneTime - (scene.duration - transitionDuration);
+      const transitionProgress = timeIntoTransition / transitionDuration;
+      const nextImg = images[currentSceneIndex + 1];
+      const nextTransform = scenes[currentSceneIndex + 1].transform;
+      drawTransitionFrame(ctx, img, nextImg, gifWidth, gifHeight, scene.transform, nextTransform, transitionProgress);
+    } else {
+      drawSceneFrame(ctx, img, gifWidth, gifHeight, scene.transform, sceneProgress);
+    }
+
+    // Add frame to GIF
+    gif.addFrame(ctx, { copy: true, delay: frameDuration });
+
+    currentTime += frameDuration;
+    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 60);
+  }
+
+  // Render GIF
+  return new Promise((resolve, reject) => {
+    gif.on('finished', (blob: Blob) => {
+      onProgress?.(100);
+      resolve(blob);
+    });
+
+    gif.on('progress', (p: number) => {
+      onProgress?.(70 + p * 30);
+    });
+
+    gif.render();
+  });
+}
+
+/**
+ * Main export function - creates video or GIF from scenes
+ */
+export async function exportScenesAsVideo(
+  scenes: SceneExportData[],
+  options: ExportOptions
+): Promise<Blob> {
+  if (scenes.length === 0) {
+    throw new Error('No scenes to export');
+  }
+
+  const format = options.format || 'webm';
+
+  if (format === 'gif') {
+    return exportAsGIF(scenes, options);
+  } else {
+    return exportAsWebM(scenes, options);
+  }
 }
 
 /**

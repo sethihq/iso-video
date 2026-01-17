@@ -28,13 +28,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ExportFormat,
   ExportQuality,
   ExportSettings,
   EXPORT_PRESETS,
   DEFAULT_EXPORT_SETTINGS,
   Resolution,
   AspectRatio,
+  ExportFormat,
 } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useEditorStore, useTotalDuration } from '@/lib/store';
@@ -47,8 +47,7 @@ interface ExportModalProps {
 }
 
 const FORMAT_OPTIONS: { value: ExportFormat; label: string; icon: typeof Film; desc: string }[] = [
-  { value: 'mp4', label: 'MP4', icon: Film, desc: 'Best compatibility' },
-  { value: 'webm', label: 'WebM', icon: Film, desc: 'Web optimized' },
+  { value: 'webm', label: 'WebM', icon: Film, desc: 'High quality video' },
   { value: 'gif', label: 'GIF', icon: Image, desc: 'Animated image' },
 ];
 
@@ -129,7 +128,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
     try {
       const dimensions = getOutputDimensions();
-      const { fps, quality } = settings;
+      const { fps, quality, format } = settings;
 
       // Prepare scene data with high-quality images
       const sceneData: SceneExportData[] = project.scenes.map((scene) => {
@@ -154,11 +153,13 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         height: dimensions.height,
         fps,
         quality,
+        format,
         onProgress: setExportProgress,
       });
 
-      // Download the video
-      const filename = `video-${Date.now()}.webm`;
+      // Download with correct extension
+      const extension = format === 'gif' ? 'gif' : 'webm';
+      const filename = `video-${Date.now()}.${extension}`;
       downloadBlob(blob, filename);
 
       // Brief delay to show 100%
@@ -412,15 +413,15 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                 <Zap className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-xs font-medium text-foreground">
-                    {dimensions.width} x {dimensions.height}
+                    {settings.format === 'gif' ? `${Math.min(dimensions.width, 800)} x ${Math.round(Math.min(dimensions.width, 800) * (dimensions.height / dimensions.width))}` : `${dimensions.width} x ${dimensions.height}`}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {settings.fps} FPS &middot; ~{estimatedSize} MB estimated
+                    {settings.format === 'gif' ? `${Math.min(settings.fps, 15)} FPS` : `${settings.fps} FPS`} &middot; ~{settings.format === 'gif' ? Math.round(estimatedSize * 0.5) : estimatedSize} MB estimated
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs font-medium text-foreground">WebM</p>
+                <p className="text-xs font-medium text-foreground uppercase">{settings.format}</p>
                 <p className="text-[10px] text-muted-foreground capitalize">{settings.quality} quality</p>
               </div>
             </div>
@@ -434,9 +435,11 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             )}
 
             {/* Format Note */}
-            <p className="text-[10px] text-muted-foreground">
-              Export creates a WebM video file. For MP4, convert using a video converter.
-            </p>
+            {settings.format === 'gif' && (
+              <p className="text-[10px] text-muted-foreground">
+                GIFs are optimized for smaller file sizes (max 800px wide, 15 FPS).
+              </p>
+            )}
           </div>
 
           {/* Footer */}
