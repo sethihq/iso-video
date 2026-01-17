@@ -168,20 +168,6 @@ export function Canvas() {
         )}
       </div>
 
-      {/* Info Bar */}
-      <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-border bg-card/95 px-4 py-2 shadow-lg backdrop-blur-sm">
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>
-            {project.settings.resolution === '720p' && '1280×720'}
-            {project.settings.resolution === '1080p' && '1920×1080'}
-            {project.settings.resolution === '4k' && '3840×2160'}
-          </span>
-          <span className="text-border">|</span>
-          <span>{project.settings.aspectRatio}</span>
-          <span className="text-border">|</span>
-          <span>{project.settings.fps} FPS</span>
-        </div>
-      </div>
     </div>
   );
 }
