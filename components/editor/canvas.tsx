@@ -65,7 +65,7 @@ export function Canvas() {
   }, []);
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-muted/50">
+    <div className="relative flex h-full w-full flex-col bg-muted/50 select-none">
       {/* Toolbar */}
       <div className="absolute left-4 top-4 z-20 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-lg backdrop-blur-sm">
         <Button
