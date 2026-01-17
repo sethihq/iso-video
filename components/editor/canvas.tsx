@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useEditorStore, useSelectedScene, useSelectedScreen } from '@/lib/store';
-import { usePlayback } from '@/hooks/use-playback';
-import { SceneRenderer } from '@/components/preview/scene-renderer';
 import { CinematicRenderer, useCinematicRendererProps } from '@/components/preview/cinematic-renderer';
 import { IsometricView } from '@/components/preview/isometric-view';
 
@@ -22,22 +20,15 @@ const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
-  const [useCinematicMode] = useState(true); // Use cinematic edge-to-edge renderer
   const { project, isPlaying } = useEditorStore();
   const selectedScene = useSelectedScene();
   const selectedScreen = useSelectedScreen();
-  const { getCurrentScene, transitionState } = usePlayback();
   const cinematicProps = useCinematicRendererProps();
 
-  // Check if we should use cinematic mode
+  // Check if we should use cinematic mode (when scenes exist)
   const shouldUseCinematicMode = useMemo(() => {
-    return useCinematicMode && project.scenes.length > 0;
-  }, [useCinematicMode, project.scenes.length]);
-
-  // Get current scene data based on playhead position (works when playing OR paused)
-  const currentSceneData = useMemo(() => {
-    return getCurrentScene();
-  }, [getCurrentScene]);
+    return project.scenes.length > 0;
+  }, [project.scenes.length]);
 
   const handleZoomIn = useCallback(() => {
     setZoom(prev => {
@@ -126,36 +117,23 @@ export function Canvas() {
         ref={containerRef}
         className="flex-1 flex items-center justify-center overflow-auto bg-muted/50"
       >
-        {/* Cinematic mode - full edge-to-edge (only when playing) */}
-        {isPlaying && shouldUseCinematicMode ? (
+        {/* Cinematic mode - WYSIWYG (same view when playing AND paused) */}
+        {shouldUseCinematicMode ? (
           <div className="absolute inset-0">
             <CinematicRenderer {...cinematicProps} />
           </div>
         ) : (
-          /* Scaled content wrapper for non-cinematic modes and paused state */
+          /* Fallback for when no scenes exist */
           <div
             className="relative flex items-center justify-center"
             style={{
               transform: `scale(${zoom})`,
               transformOrigin: 'center center',
               transition: 'transform 0.2s ease-out',
-              // Add padding to prevent edge clipping with 3D transforms
               padding: '80px',
             }}
           >
-            {/* Show scene at current playhead position (works when playing OR paused) */}
-            {currentSceneData?.scene && currentSceneData?.screen ? (
-              <SceneRenderer
-                currentScene={currentSceneData.scene}
-                currentScreen={currentSceneData.screen}
-                previousScene={isPlaying ? transitionState.previousScene : null}
-                previousScreen={isPlaying ? transitionState.previousScreen : null}
-                sceneProgress={currentSceneData.sceneProgress}
-                isTransitioning={isPlaying && transitionState.isTransitioning}
-                transitionProgress={transitionState.transitionProgress}
-              />
-            ) : selectedScene && selectedScreen ? (
-              /* Fallback to selected scene if no playhead position */
+            {selectedScene && selectedScreen ? (
               <IsometricView
                 screen={selectedScreen}
                 transform={selectedScene.transform}
