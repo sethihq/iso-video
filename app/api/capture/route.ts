@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import puppeteer from 'puppeteer-core';
 import sharp from 'sharp';
 
+// Chromium binary URL for serverless (must match chromium-min version)
+const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
+
 // Get browser executable path based on environment
 const getBrowser = async () => {
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    // Serverless environment - use @sparticuz/chromium
-    const chromium = await import('@sparticuz/chromium');
+    // Serverless environment - use @sparticuz/chromium-min
+    const chromium = await import('@sparticuz/chromium-min');
     return puppeteer.launch({
       args: chromium.default.args,
-      executablePath: await chromium.default.executablePath(),
+      executablePath: await chromium.default.executablePath(CHROMIUM_URL),
       headless: true,
     });
   } else {
