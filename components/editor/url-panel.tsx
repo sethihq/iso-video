@@ -17,7 +17,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { useEditorStore } from '@/lib/store';
 import { VIDEO_STYLE_PRESETS } from '@/lib/presets';
 import { DetectedSection } from '@/lib/types';
@@ -178,30 +177,65 @@ export function UrlPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
-      {/* Header */}
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-medium text-foreground">
-            {step === 'url' && (isManualMode ? 'Upload Screenshots' : 'Enter Website URL')}
+      {/* Pill Tabs - only show on url step */}
+      {step === 'url' && (
+        <div className="p-2 border-b border-border shrink-0">
+          <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg">
+            <button
+              onClick={() => setManualMode(false)}
+              className={cn(
+                'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                isManualMode && 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {!isManualMode && (
+                <motion.div
+                  layoutId="urlPanelActiveTab"
+                  className="absolute inset-0 bg-card rounded-md shadow-sm"
+                  transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
+                />
+              )}
+              <span className={cn('relative flex items-center gap-1.5', !isManualMode && 'text-foreground')}>
+                <Globe className="h-3.5 w-3.5" />
+                URL
+              </span>
+            </button>
+            <button
+              onClick={() => setManualMode(true)}
+              className={cn(
+                'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                !isManualMode && 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {isManualMode && (
+                <motion.div
+                  layoutId="urlPanelActiveTab"
+                  className="absolute inset-0 bg-card rounded-md shadow-sm"
+                  transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
+                />
+              )}
+              <span className={cn('relative flex items-center gap-1.5', isManualMode && 'text-foreground')}>
+                <ImagePlus className="h-3.5 w-3.5" />
+                Upload
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Header for other steps */}
+      {step !== 'url' && (
+        <div className="border-b border-border p-4">
+          <h2 className="text-sm font-medium text-foreground mb-1">
             {step === 'sections' && 'Select Sections'}
             {step === 'ready' && 'Video Ready'}
           </h2>
+          <p className="text-xs text-muted-foreground">
+            {step === 'sections' && 'Choose which sections to include'}
+            {step === 'ready' && 'Your video is ready to preview and export'}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {step === 'url' && (isManualMode ? 'Upload your own screenshots' : 'Paste any website URL to get started')}
-          {step === 'sections' && 'Choose which sections to include'}
-          {step === 'ready' && 'Your video is ready to preview and export'}
-        </p>
-        {step === 'url' && (
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-            <span className="text-xs text-muted-foreground">Manual Upload</span>
-            <Switch
-              checked={isManualMode}
-              onCheckedChange={setManualMode}
-            />
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
