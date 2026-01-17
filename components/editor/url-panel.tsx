@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useEditorStore } from '@/lib/store';
 import { VIDEO_STYLE_PRESETS } from '@/lib/presets';
 import { DetectedSection } from '@/lib/types';
@@ -185,25 +186,21 @@ export function UrlPanel() {
             {step === 'sections' && 'Select Sections'}
             {step === 'ready' && 'Video Ready'}
           </h2>
-          {step === 'url' && (
-            <button
-              onClick={() => setManualMode(!isManualMode)}
-              className={cn(
-                'text-[10px] px-2 py-1 rounded-full transition-colors',
-                isManualMode
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {isManualMode ? 'URL Mode' : 'Manual'}
-            </button>
-          )}
         </div>
         <p className="text-xs text-muted-foreground">
           {step === 'url' && (isManualMode ? 'Upload your own screenshots' : 'Paste any website URL to get started')}
           {step === 'sections' && 'Choose which sections to include'}
           {step === 'ready' && 'Your video is ready to preview and export'}
         </p>
+        {step === 'url' && (
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+            <span className="text-xs text-muted-foreground">Manual Upload</span>
+            <Switch
+              checked={isManualMode}
+              onCheckedChange={setManualMode}
+            />
+          </div>
+        )}
       </div>
 
       {/* Content */}
