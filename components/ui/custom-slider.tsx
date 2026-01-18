@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useId } from 'react';
 import { Slider as SliderPrimitive } from '@base-ui/react/slider';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,8 @@ export function CustomSlider({
   className,
 }: CustomSliderProps) {
   const displayValue = step < 1 ? value.toFixed(2) : Math.round(value);
+  const labelId = useId();
+  const valueId = useId();
 
   return (
     <div className={cn('group relative', className)}>
@@ -42,16 +45,21 @@ export function CustomSlider({
           const val = Array.isArray(v) ? v[0] : v;
           onChange(val);
         }}
+        aria-labelledby={label ? labelId : undefined}
+        aria-describedby={valueId}
       >
         {/* Label */}
         {label && (
-          <span className="absolute left-3 z-10 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+          <span
+            id={labelId}
+            className="absolute left-3 z-10 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground"
+          >
             {label}
           </span>
         )}
 
         {/* Value Display */}
-        <span className="absolute right-3 z-10 text-xs font-mono text-foreground">
+        <span id={valueId} className="absolute right-3 z-10 text-xs font-mono text-foreground" aria-live="polite">
           {displayValue}
           {valueSubtext && (
             <span className="ml-0.5 text-muted-foreground">{valueSubtext}</span>

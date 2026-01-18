@@ -52,9 +52,9 @@ export function TimelineToolbar({
           size="sm"
           onClick={onStop}
           className="h-8 w-8 p-0"
-          title="Go to start"
+          aria-label="Go to start"
         >
-          <SkipBack className="h-4 w-4" />
+          <SkipBack className="h-4 w-4" aria-hidden="true" />
         </Button>
 
         <Button
@@ -62,12 +62,12 @@ export function TimelineToolbar({
           size="sm"
           onClick={isPlaying ? onPause : onPlay}
           className={cn('h-8 w-8 p-0', isPlaying && 'text-primary')}
-          title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? (
-            <Pause className="h-4 w-4" />
+            <Pause className="h-4 w-4" aria-hidden="true" />
           ) : (
-            <Play className="h-4 w-4" />
+            <Play className="h-4 w-4" aria-hidden="true" />
           )}
         </Button>
 
@@ -83,17 +83,18 @@ export function TimelineToolbar({
 
       {/* Zoom and export */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" role="group" aria-label="Timeline zoom">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onZoomChange(Math.max(0.25, zoom - 0.25))}
             disabled={zoom <= 0.25}
             className="h-8 w-8 p-0"
+            aria-label="Zoom out timeline"
           >
-            <ZoomOut className="h-4 w-4" />
+            <ZoomOut className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <span className="text-xs text-muted-foreground w-12 text-center">
+          <span className="text-xs text-muted-foreground w-12 text-center" aria-live="polite">
             {Math.round(zoom * 100)}%
           </span>
           <Button
@@ -102,8 +103,9 @@ export function TimelineToolbar({
             onClick={() => onZoomChange(Math.min(4, zoom + 0.25))}
             disabled={zoom >= 4}
             className="h-8 w-8 p-0"
+            aria-label="Zoom in timeline"
           >
-            <ZoomIn className="h-4 w-4" />
+            <ZoomIn className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
 
@@ -114,7 +116,7 @@ export function TimelineToolbar({
           onClick={onExport}
           disabled={sceneCount === 0}
         >
-          <Download className="h-3.5 w-3.5" />
+          <Download className="h-3.5 w-3.5" aria-hidden="true" />
           Export
         </Button>
       </div>

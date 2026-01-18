@@ -90,7 +90,7 @@ export function IsometricView({
         {screen.imageUrl ? (
           <img
             src={screen.imageUrl}
-            alt="Screenshot"
+            alt=""
             className="w-full h-full object-cover object-top"
             draggable={false}
           />

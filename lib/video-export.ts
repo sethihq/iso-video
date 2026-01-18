@@ -2,10 +2,12 @@
  * High-Quality Video Export
  *
  * Renders scenes with proper transforms and high-quality images.
- * Supports WebM video and GIF formats.
+ * Supports WebM, MP4 (via FFmpeg.wasm), and GIF formats.
  */
 
 import GIF from 'gif.js-upgrade';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL } from '@ffmpeg/util';
 import { ExportFormat } from './types';
 
 export interface ExportOptions {
@@ -66,21 +68,18 @@ function drawSceneFrame(
   width: number,
   height: number,
   transform: SceneExportData['transform'],
-  _progress: number // 0-1 for animation timing
+  _progress: number
 ) {
   // Clear with background
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0, 0, width, height);
 
-  // Save context state
   ctx.save();
 
-  // Enable high-quality image rendering
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Calculate image dimensions to fit in frame with padding
-  const padding = 0.1; // 10% padding
+  const padding = 0.1;
   const availableWidth = width * (1 - padding * 2);
   const availableHeight = height * (1 - padding * 2);
 
@@ -91,54 +90,40 @@ function drawSceneFrame(
   let drawHeight: number;
 
   if (imgAspect > frameAspect) {
-    // Image is wider than frame
     drawWidth = availableWidth;
     drawHeight = drawWidth / imgAspect;
   } else {
-    // Image is taller than frame
     drawHeight = availableHeight;
     drawWidth = drawHeight * imgAspect;
   }
 
-  // Apply scale from transform
   drawWidth *= transform.scale;
   drawHeight *= transform.scale;
 
-  // Center position
   const x = (width - drawWidth) / 2;
   const y = (height - drawHeight) / 2;
 
-  // Move to center for rotation
   ctx.translate(width / 2, height / 2);
-
-  // Apply Z rotation
   ctx.rotate((transform.rotateZ * Math.PI) / 180);
 
-  // Apply pseudo-3D perspective effect using skew
-  // Convert rotateX and rotateY to skew approximation
   const skewX = Math.tan((transform.rotateY * Math.PI) / 180) * 0.5;
   const skewY = Math.tan((transform.rotateX * Math.PI) / 180) * 0.3;
   ctx.transform(1, skewY, skewX, 1, 0, 0);
 
-  // Move back from center
   ctx.translate(-width / 2, -height / 2);
 
-  // Add subtle shadow for depth
   ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
   ctx.shadowBlur = 30;
   ctx.shadowOffsetX = 10;
   ctx.shadowOffsetY = 15;
 
-  // Draw rounded rectangle clip path
   const radius = 12;
   ctx.beginPath();
   ctx.roundRect(x, y, drawWidth, drawHeight, radius);
   ctx.clip();
 
-  // Draw the image
   ctx.drawImage(img, x, y, drawWidth, drawHeight);
 
-  // Restore context
   ctx.restore();
 }
 
@@ -153,17 +138,14 @@ function drawTransitionFrame(
   height: number,
   transformFrom: SceneExportData['transform'] | null,
   transformTo: SceneExportData['transform'],
-  transitionProgress: number // 0-1
+  transitionProgress: number
 ) {
-  // Clear with background
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0, 0, width, height);
 
-  // Ease function for smooth transition
   const ease = (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   const eased = ease(transitionProgress);
 
-  // Draw outgoing scene with fade out
   if (imgFrom && transformFrom && transitionProgress < 0.5) {
     ctx.save();
     ctx.globalAlpha = 1 - eased;
@@ -171,7 +153,6 @@ function drawTransitionFrame(
     ctx.restore();
   }
 
-  // Draw incoming scene with fade in
   ctx.save();
   ctx.globalAlpha = eased;
   drawSceneFrame(ctx, imgTo, width, height, transformTo, 0);
@@ -179,15 +160,14 @@ function drawTransitionFrame(
 }
 
 /**
- * Export as WebM video using MediaRecorder
+ * Render frames to canvas and return as WebM blob
  */
-async function exportAsWebM(
+async function renderToWebM(
   scenes: SceneExportData[],
   options: ExportOptions
 ): Promise<Blob> {
   const { width, height, fps, quality, onProgress } = options;
 
-  // Create canvas
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -196,13 +176,11 @@ async function exportAsWebM(
     desynchronized: true
   })!;
 
-  // Check browser support
   const mimeType = 'video/webm;codecs=vp9';
   if (!MediaRecorder.isTypeSupported(mimeType)) {
     throw new Error('WebM VP9 not supported. Please use Chrome or Edge.');
   }
 
-  // Setup MediaRecorder with high quality
   const stream = canvas.captureStream(fps);
   const mediaRecorder = new MediaRecorder(stream, {
     mimeType,
@@ -214,7 +192,6 @@ async function exportAsWebM(
     if (e.data.size > 0) chunks.push(e.data);
   };
 
-  // Pre-load all images
   onProgress?.(0);
   const images: HTMLImageElement[] = [];
 
@@ -224,13 +201,11 @@ async function exportAsWebM(
     onProgress?.(((i + 1) / scenes.length) * 10);
   }
 
-  // Calculate total frames
   const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
   const frameDuration = 1000 / fps;
   const totalFrames = Math.ceil(totalDuration / frameDuration);
   const transitionDuration = 300;
 
-  // Start recording
   mediaRecorder.start(100);
 
   let currentTime = 0;
@@ -238,7 +213,6 @@ async function exportAsWebM(
   let sceneStartTime = 0;
 
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-    // Find current scene
     while (
       currentSceneIndex < scenes.length - 1 &&
       currentTime >= sceneStartTime + scenes[currentSceneIndex].duration
@@ -252,7 +226,6 @@ async function exportAsWebM(
     const sceneTime = currentTime - sceneStartTime;
     const sceneProgress = sceneTime / scene.duration;
 
-    // Check if we're in a transition zone
     const isInEntryTransition = sceneTime < transitionDuration && currentSceneIndex > 0;
     const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
 
@@ -274,17 +247,15 @@ async function exportAsWebM(
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
     currentTime += frameDuration;
-    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 85);
+    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 70);
   }
 
-  // Stop recording
   mediaRecorder.stop();
 
   return new Promise((resolve, reject) => {
     mediaRecorder.onstop = () => {
       try {
         const blob = new Blob(chunks, { type: 'video/webm' });
-        onProgress?.(100);
         resolve(blob);
       } catch (error) {
         reject(error);
@@ -292,6 +263,122 @@ async function exportAsWebM(
     };
     mediaRecorder.onerror = (e) => reject(e);
   });
+}
+
+// Singleton FFmpeg instance
+let ffmpegInstance: FFmpeg | null = null;
+let ffmpegLoaded = false;
+let ffmpegLoading: Promise<void> | null = null;
+
+/**
+ * Get or create FFmpeg instance with local files
+ */
+async function getFFmpeg(onProgress?: (progress: number) => void): Promise<FFmpeg> {
+  if (ffmpegInstance && ffmpegLoaded) {
+    return ffmpegInstance;
+  }
+
+  if (ffmpegLoading) {
+    await ffmpegLoading;
+    return ffmpegInstance!;
+  }
+
+  ffmpegInstance = new FFmpeg();
+
+  ffmpegLoading = (async () => {
+    onProgress?.(80);
+
+    // Create blob URLs from local files to avoid CORS issues
+    const baseURL = '/ffmpeg';
+    const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+    const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+
+    await ffmpegInstance!.load({
+      coreURL,
+      wasmURL,
+    });
+
+    ffmpegLoaded = true;
+    onProgress?.(85);
+  })();
+
+  await ffmpegLoading;
+  return ffmpegInstance!;
+}
+
+/**
+ * Convert WebM to MP4 using FFmpeg.wasm
+ */
+async function convertToMP4(
+  webmBlob: Blob,
+  onProgress?: (progress: number) => void
+): Promise<Blob> {
+  const ffmpeg = await getFFmpeg(onProgress);
+
+  ffmpeg.on('progress', ({ progress }) => {
+    onProgress?.(85 + progress * 14);
+  });
+
+  // Write input file
+  const webmData = new Uint8Array(await webmBlob.arrayBuffer());
+  await ffmpeg.writeFile('input.webm', webmData);
+
+  // Convert to MP4 with H.264 codec
+  await ffmpeg.exec([
+    '-i', 'input.webm',
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    'output.mp4'
+  ]);
+
+  // Read output file
+  const mp4Data = await ffmpeg.readFile('output.mp4');
+  const mp4Blob = new Blob([mp4Data as BlobPart], { type: 'video/mp4' });
+
+  // Cleanup
+  await ffmpeg.deleteFile('input.webm');
+  await ffmpeg.deleteFile('output.mp4');
+
+  onProgress?.(100);
+  return mp4Blob;
+}
+
+/**
+ * Export as WebM video
+ */
+async function exportAsWebM(
+  scenes: SceneExportData[],
+  options: ExportOptions
+): Promise<Blob> {
+  const blob = await renderToWebM(scenes, options);
+  options.onProgress?.(100);
+  return blob;
+}
+
+/**
+ * Export as MP4 video (WebM -> MP4 conversion)
+ */
+async function exportAsMP4(
+  scenes: SceneExportData[],
+  options: ExportOptions
+): Promise<Blob> {
+  try {
+    // First render to WebM
+    const webmBlob = await renderToWebM(scenes, options);
+
+    // Then convert to MP4
+    const mp4Blob = await convertToMP4(webmBlob, options.onProgress);
+
+    return mp4Blob;
+  } catch (error) {
+    console.error('MP4 export failed:', error);
+    throw new Error(
+      'MP4 export failed. Please try WebM format instead.'
+    );
+  }
 }
 
 /**
@@ -303,20 +390,15 @@ async function exportAsGIF(
 ): Promise<Blob> {
   const { width, height, fps, quality, onProgress } = options;
 
-  // Use lower resolution for GIF to keep file size manageable
   const gifWidth = Math.min(width, 800);
   const gifHeight = Math.round(gifWidth * (height / width));
-
-  // Lower FPS for GIF (max 15 fps for reasonable file size)
   const gifFps = Math.min(fps, 15);
 
-  // Create canvas
   const canvas = document.createElement('canvas');
   canvas.width = gifWidth;
   canvas.height = gifHeight;
   const ctx = canvas.getContext('2d', { alpha: false })!;
 
-  // Create GIF encoder
   const gif = new GIF({
     workers: 2,
     quality: GIF_QUALITY[quality],
@@ -325,7 +407,6 @@ async function exportAsGIF(
     workerScript: '/gif.worker.js',
   });
 
-  // Pre-load all images
   onProgress?.(0);
   const images: HTMLImageElement[] = [];
 
@@ -335,7 +416,6 @@ async function exportAsGIF(
     onProgress?.(((i + 1) / scenes.length) * 10);
   }
 
-  // Calculate frames
   const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
   const frameDuration = 1000 / gifFps;
   const totalFrames = Math.ceil(totalDuration / frameDuration);
@@ -346,7 +426,6 @@ async function exportAsGIF(
   let sceneStartTime = 0;
 
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-    // Find current scene
     while (
       currentSceneIndex < scenes.length - 1 &&
       currentTime >= sceneStartTime + scenes[currentSceneIndex].duration
@@ -360,7 +439,6 @@ async function exportAsGIF(
     const sceneTime = currentTime - sceneStartTime;
     const sceneProgress = sceneTime / scene.duration;
 
-    // Check transitions
     const isInEntryTransition = sceneTime < transitionDuration && currentSceneIndex > 0;
     const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
 
@@ -379,14 +457,12 @@ async function exportAsGIF(
       drawSceneFrame(ctx, img, gifWidth, gifHeight, scene.transform, sceneProgress);
     }
 
-    // Add frame to GIF
     gif.addFrame(ctx, { copy: true, delay: frameDuration });
 
     currentTime += frameDuration;
     onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 60);
   }
 
-  // Render GIF
   return new Promise((resolve, reject) => {
     gif.on('finished', (blob: Blob) => {
       onProgress?.(100);
@@ -416,6 +492,8 @@ export async function exportScenesAsVideo(
 
   if (format === 'gif') {
     return exportAsGIF(scenes, options);
+  } else if (format === 'mp4') {
+    return exportAsMP4(scenes, options);
   } else {
     return exportAsWebM(scenes, options);
   }

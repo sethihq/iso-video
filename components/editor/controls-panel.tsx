@@ -5,20 +5,20 @@ import {
   ChevronDown,
   RotateCcw,
   SlidersHorizontal,
-  Camera,
-  Sparkles,
-  Clock,
-  Move3d,
   Music,
   Upload,
   Trash2,
-  Volume2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { CustomSlider } from '@/components/ui/custom-slider';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { useEditorStore, useSelectedScene } from '@/lib/store';
 import {
   ISOMETRIC_PRESETS,
@@ -61,16 +61,16 @@ const EASING_OPTIONS: { value: EasingType; label: string }[] = [
   { value: 'spring', label: 'Spring' },
 ];
 
-type TabType = 'style' | 'camera' | 'audio';
+type TabType = 'camera' | 'style' | 'audio';
 
-const TABS: { id: TabType; label: string; icon: typeof Sparkles }[] = [
-  { id: 'style', label: 'Style', icon: Sparkles },
-  { id: 'camera', label: 'Camera', icon: Camera },
-  { id: 'audio', label: 'Audio', icon: Music },
+const TABS: { id: TabType; label: string }[] = [
+  { id: 'camera', label: 'Camera' },
+  { id: 'style', label: 'Style' },
+  { id: 'audio', label: 'Audio' },
 ];
 
 export function ControlsPanel() {
-  const [activeTab, setActiveTab] = useState<TabType>('style');
+  const [activeTab, setActiveTab] = useState<TabType>('camera');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const selectedScene = useSelectedScene();
   const {
@@ -138,13 +138,18 @@ export function ControlsPanel() {
     <div className="flex h-full w-full flex-col bg-card">
       {/* Pill Tabs */}
       <div className="p-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg">
+        <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg" role="tablist" aria-label="Controls panels">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                id={`tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`tabpanel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
                 className={cn(
                   'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
                   !isActive && 'text-muted-foreground hover:text-foreground'
@@ -157,8 +162,7 @@ export function ControlsPanel() {
                     transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
                   />
                 )}
-                <span className={cn('relative flex items-center gap-1.5', isActive && 'text-foreground')}>
-                  <tab.icon className="h-3.5 w-3.5" />
+                <span className={cn('relative', isActive && 'text-foreground')}>
                   {tab.label}
                 </span>
               </button>
@@ -177,9 +181,12 @@ export function ControlsPanel() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               className="p-4 space-y-5"
+              role="tabpanel"
+              id="tabpanel-style"
+              aria-labelledby="tab-style"
             >
               {/* Duration */}
-              <Section title="Duration" icon={Clock}>
+              <Section title="Duration">
                 <CustomSlider
                   label="Scene Length"
                   value={selectedScene.duration}
@@ -217,57 +224,60 @@ export function ControlsPanel() {
                 <div className="space-y-3">
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block">Entry Animation</Label>
-                    <Select
-                      value={selectedScene.motion.entry}
-                      onValueChange={(v) => v && handleMotionChange('entry', v)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="h-9 text-xs">
+                        {ANIMATION_OPTIONS.find((o) => o.value === selectedScene.motion.entry)?.label || 'Select'}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
                         {ANIMATION_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value} className="text-xs">
+                          <DropdownMenuItem
+                            key={option.value}
+                            onClick={() => handleMotionChange('entry', option.value)}
+                            selected={selectedScene.motion.entry === option.value}
+                          >
                             {option.label}
-                          </SelectItem>
+                          </DropdownMenuItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block">Exit Animation</Label>
-                    <Select
-                      value={selectedScene.motion.exit}
-                      onValueChange={(v) => v && handleMotionChange('exit', v)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="h-9 text-xs">
+                        {ANIMATION_OPTIONS.find((o) => o.value === selectedScene.motion.exit)?.label || 'Select'}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
                         {ANIMATION_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value} className="text-xs">
+                          <DropdownMenuItem
+                            key={option.value}
+                            onClick={() => handleMotionChange('exit', option.value)}
+                            selected={selectedScene.motion.exit === option.value}
+                          >
                             {option.label}
-                          </SelectItem>
+                          </DropdownMenuItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block">Easing</Label>
-                    <Select
-                      value={selectedScene.motion.easing}
-                      onValueChange={(v) => v && handleMotionChange('easing', v)}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="h-9 text-xs">
+                        {EASING_OPTIONS.find((o) => o.value === selectedScene.motion.easing)?.label || 'Select'}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
                         {EASING_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value} className="text-xs">
+                          <DropdownMenuItem
+                            key={option.value}
+                            onClick={() => handleMotionChange('easing', option.value)}
+                            selected={selectedScene.motion.easing === option.value}
+                          >
                             {option.label}
-                          </SelectItem>
+                          </DropdownMenuItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </Section>
@@ -276,8 +286,10 @@ export function ControlsPanel() {
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
                 className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                aria-expanded={showAdvanced}
+                aria-controls="advanced-transform-section"
               >
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180')} />
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180')} aria-hidden="true" />
                 Advanced Transform
               </button>
 
@@ -288,10 +300,10 @@ export function ControlsPanel() {
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     className="overflow-hidden space-y-4"
+                    id="advanced-transform-section"
                   >
                     <Section
                       title="3D Transform"
-                      icon={Move3d}
                       action={
                         <Button variant="ghost" size="sm" onClick={handleReset} className="h-6 px-2 text-[10px]">
                           <RotateCcw className="mr-1 h-3 w-3" />
@@ -380,27 +392,31 @@ export function ControlsPanel() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               className="p-4 space-y-5"
+              role="tabpanel"
+              id="tabpanel-camera"
+              aria-labelledby="tab-camera"
             >
               {/* Scene Camera */}
               <Section title="Scene Movement">
                 <div className="space-y-3">
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1 block">Direction</Label>
-                    <Select
-                      value={cameraSettings.moveDirection}
-                      onValueChange={(v) => v && handleCameraChange('moveDirection', v)}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="h-8 text-xs">
+                        {CAMERA_DIRECTION_OPTIONS.find((o) => o.value === cameraSettings.moveDirection)?.label || 'Select'}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
                         {CAMERA_DIRECTION_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value} className="text-xs">
+                          <DropdownMenuItem
+                            key={option.value}
+                            onClick={() => handleCameraChange('moveDirection', option.value)}
+                            selected={cameraSettings.moveDirection === option.value}
+                          >
                             {option.label}
-                          </SelectItem>
+                          </DropdownMenuItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <CustomSlider
                     label="Offset X"
@@ -456,9 +472,12 @@ export function ControlsPanel() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               className="p-4 space-y-5"
+              role="tabpanel"
+              id="tabpanel-audio"
+              aria-labelledby="tab-audio"
             >
               {/* Audio Upload */}
-              <Section title="Background Music" icon={Music}>
+              <Section title="Background Music">
                 <div className="space-y-3">
                   {project.audioTracks.length === 0 ? (
                     <label
@@ -466,17 +485,18 @@ export function ControlsPanel() {
                       className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
                     >
                       <div className="flex flex-col items-center justify-center pt-3 pb-3">
-                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" />
+                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" aria-hidden="true" />
                         <p className="text-xs text-muted-foreground">
                           <span className="font-medium text-foreground">Upload audio</span>
                         </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">MP3, WAV, OGG</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5" id="audio-format-hint">MP3, WAV, OGG</p>
                       </div>
                       <input
                         id="audio-upload"
                         type="file"
                         className="hidden"
                         accept="audio/*"
+                        aria-describedby="audio-format-hint"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
@@ -523,8 +543,9 @@ export function ControlsPanel() {
                           <button
                             onClick={() => removeAudioTrack(track.id)}
                             className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
+                            aria-label={`Remove ${track.name}`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                         </div>
                       ))}
@@ -535,7 +556,7 @@ export function ControlsPanel() {
 
               {/* Volume Control */}
               {project.audioTracks.length > 0 && (
-                <Section title="Volume" icon={Volume2}>
+                <Section title="Volume">
                   <div className="space-y-3">
                     {project.audioTracks.map((track) => (
                       <CustomSlider
@@ -603,7 +624,7 @@ function Section({
   children,
 }: {
   title: string;
-  icon?: typeof Sparkles;
+  icon?: typeof Music;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {

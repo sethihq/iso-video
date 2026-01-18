@@ -65,12 +65,14 @@ export function Canvas() {
           className="h-8 w-8 p-0"
           onClick={handleZoomOut}
           disabled={zoom <= ZOOM_LEVELS[0]}
+          aria-label="Zoom out"
         >
           <ZoomOut className="h-4 w-4" />
         </Button>
         <button
           onClick={handleResetZoom}
           className="px-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors min-w-[48px]"
+          aria-label={`Current zoom ${Math.round(zoom * 100)}%, click to reset`}
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -80,16 +82,17 @@ export function Canvas() {
           className="h-8 w-8 p-0"
           onClick={handleZoomIn}
           disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]}
+          aria-label="Zoom in"
         >
           <ZoomIn className="h-4 w-4" />
         </Button>
-        <div className="mx-1 h-4 w-px bg-border" />
+        <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
         <Button
           variant="ghost"
           size="sm"
           className="h-8 w-8 p-0"
           onClick={handleFitToView}
-          title="Fit to view"
+          aria-label="Fit to view"
         >
           <Maximize className="h-4 w-4" />
         </Button>
@@ -98,7 +101,7 @@ export function Canvas() {
           size="sm"
           className="h-8 w-8 p-0"
           onClick={handleResetZoom}
-          title="Reset zoom"
+          aria-label="Reset zoom"
         >
           <RotateCcw className="h-4 w-4" />
         </Button>

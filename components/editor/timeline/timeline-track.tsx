@@ -146,7 +146,11 @@ const TimelineElement = memo(function TimelineElement({
 
       {/* Playing indicator */}
       {isPlaying && (
-        <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-green-500" />
+        <div
+          className="absolute top-1 right-1 w-2 h-2 rounded-full bg-green-500 animate-pulse"
+          role="status"
+          aria-label="Currently playing"
+        />
       )}
 
       {/* Drag handle */}
@@ -154,8 +158,9 @@ const TimelineElement = memo(function TimelineElement({
         {...attributes}
         {...listeners}
         className="absolute top-1 left-1 cursor-grab rounded p-0.5 opacity-0 group-hover:opacity-100 bg-black/50 active:cursor-grabbing"
+        aria-label={`Drag to reorder ${screen?.section || `Scene ${index + 1}`}`}
       >
-        <GripVertical className="h-3 w-3 text-white" />
+        <GripVertical className="h-3 w-3 text-white" aria-hidden="true" />
       </div>
 
       {/* Delete button */}
@@ -165,8 +170,9 @@ const TimelineElement = memo(function TimelineElement({
           onRemove();
         }}
         className="absolute top-1 right-1 h-5 w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 hover:bg-red-500 text-white rounded"
+        aria-label={`Remove ${screen?.section || `Scene ${index + 1}`}`}
       >
-        <Trash2 className="h-2.5 w-2.5" />
+        <Trash2 className="h-2.5 w-2.5" aria-hidden="true" />
       </button>
 
       {/* Info */}

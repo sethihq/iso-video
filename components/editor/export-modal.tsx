@@ -21,12 +21,11 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import {
   ExportQuality,
   ExportSettings,
@@ -47,6 +46,7 @@ interface ExportModalProps {
 }
 
 const FORMAT_OPTIONS: { value: ExportFormat; label: string; icon: typeof Film; desc: string }[] = [
+  { value: 'mp4', label: 'MP4', icon: Film, desc: 'Universal video' },
   { value: 'webm', label: 'WebM', icon: Film, desc: 'High quality video' },
   { value: 'gif', label: 'GIF', icon: Image, desc: 'Animated image' },
 ];
@@ -158,7 +158,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
       });
 
       // Download with correct extension
-      const extension = format === 'gif' ? 'gif' : 'webm';
+      const extension = format === 'gif' ? 'gif' : format === 'mp4' ? 'mp4' : 'webm';
       const filename = `video-${Date.now()}.${extension}`;
       downloadBlob(blob, filename);
 
@@ -190,6 +190,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
         onClick={onClose}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-modal-title"
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -203,17 +206,17 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Download className="h-4.5 w-4.5 text-primary" />
+                <Download className="h-4.5 w-4.5 text-primary" aria-hidden="true" />
               </div>
               <div>
-                <h2 className="text-base font-semibold text-foreground">Export Video</h2>
+                <h2 id="export-modal-title" className="text-base font-semibold text-foreground">Export Video</h2>
                 <p className="text-xs text-muted-foreground">
                   {project.scenes.length} scenes &middot; {(totalDuration / 1000).toFixed(1)}s
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
-              <X className="h-4 w-4" />
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0" aria-label="Close export modal">
+              <X className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
 
@@ -221,16 +224,17 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
           <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
             {/* Quick Presets */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="quick-export-label">
                 Quick Export
               </Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2" role="group" aria-labelledby="quick-export-label">
                 {EXPORT_PRESETS.map((preset) => {
                   const Icon = PLATFORM_ICONS[preset.platform] || Film;
                   return (
                     <button
                       key={preset.id}
                       onClick={() => handlePresetSelect(preset.id)}
+                      aria-pressed={activePreset === preset.id}
                       className={cn(
                         'flex items-center gap-3 p-3 rounded-lg border text-left transition-all',
                         activePreset === preset.id
@@ -249,6 +253,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                             'h-4 w-4',
                             activePreset === preset.id ? 'text-primary' : 'text-muted-foreground'
                           )}
+                          aria-hidden="true"
                         />
                       </div>
                       <div className="min-w-0">
@@ -258,7 +263,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                         </p>
                       </div>
                       {activePreset === preset.id && (
-                        <Check className="h-4 w-4 text-primary ml-auto shrink-0" />
+                        <Check className="h-4 w-4 text-primary ml-auto shrink-0" aria-hidden="true" />
                       )}
                     </button>
                   );
@@ -268,14 +273,15 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
             {/* Format Selection */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="format-label">
                 Format
               </Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="format-label">
                 {FORMAT_OPTIONS.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleSettingChange('format', option.value)}
+                    aria-pressed={settings.format === option.value}
                     className={cn(
                       'flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all',
                       settings.format === option.value
@@ -288,6 +294,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                         'h-5 w-5',
                         settings.format === option.value ? 'text-primary' : 'text-muted-foreground'
                       )}
+                      aria-hidden="true"
                     />
                     <span className="text-xs font-medium">{option.label}</span>
                     <span className="text-[10px] text-muted-foreground">{option.desc}</span>
@@ -298,14 +305,15 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
             {/* Quality */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="quality-label">
                 Quality
               </Label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-2" role="group" aria-labelledby="quality-label">
                 {QUALITY_OPTIONS.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleSettingChange('quality', option.value)}
+                    aria-pressed={settings.quality === option.value}
                     className={cn(
                       'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all',
                       settings.quality === option.value
@@ -324,8 +332,10 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-expanded={showAdvanced}
+              aria-controls="advanced-export-settings"
             >
-              <Settings2 className="h-3.5 w-3.5" />
+              <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{showAdvanced ? 'Hide' : 'Show'} Advanced Settings</span>
             </button>
 
@@ -337,60 +347,102 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   className="space-y-4 overflow-hidden"
+                  id="advanced-export-settings"
                 >
                   <div className="grid grid-cols-2 gap-4">
                     {/* Resolution */}
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1.5 block">Resolution</Label>
-                      <Select
-                        value={settings.resolution}
-                        onValueChange={(v) => handleSettingChange('resolution', v as Resolution)}
-                      >
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="720p" className="text-xs">720p (HD)</SelectItem>
-                          <SelectItem value="1080p" className="text-xs">1080p (Full HD)</SelectItem>
-                          <SelectItem value="4k" className="text-xs">4K (Ultra HD)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="h-9 text-xs">
+                          {settings.resolution === '720p' && '720p (HD)'}
+                          {settings.resolution === '1080p' && '1080p (Full HD)'}
+                          {settings.resolution === '4k' && '4K (Ultra HD)'}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('resolution', '720p')}
+                            selected={settings.resolution === '720p'}
+                          >
+                            720p (HD)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('resolution', '1080p')}
+                            selected={settings.resolution === '1080p'}
+                          >
+                            1080p (Full HD)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('resolution', '4k')}
+                            selected={settings.resolution === '4k'}
+                          >
+                            4K (Ultra HD)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                     {/* Aspect Ratio */}
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1.5 block">Aspect Ratio</Label>
-                      <Select
-                        value={settings.aspectRatio}
-                        onValueChange={(v) => handleSettingChange('aspectRatio', v as AspectRatio)}
-                      >
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="16:9" className="text-xs">16:9 (Landscape)</SelectItem>
-                          <SelectItem value="1:1" className="text-xs">1:1 (Square)</SelectItem>
-                          <SelectItem value="9:16" className="text-xs">9:16 (Portrait)</SelectItem>
-                          <SelectItem value="4:3" className="text-xs">4:3 (Classic)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="h-9 text-xs">
+                          {settings.aspectRatio === '16:9' && '16:9 (Landscape)'}
+                          {settings.aspectRatio === '1:1' && '1:1 (Square)'}
+                          {settings.aspectRatio === '9:16' && '9:16 (Portrait)'}
+                          {settings.aspectRatio === '4:3' && '4:3 (Classic)'}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('aspectRatio', '16:9')}
+                            selected={settings.aspectRatio === '16:9'}
+                          >
+                            16:9 (Landscape)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('aspectRatio', '1:1')}
+                            selected={settings.aspectRatio === '1:1'}
+                          >
+                            1:1 (Square)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('aspectRatio', '9:16')}
+                            selected={settings.aspectRatio === '9:16'}
+                          >
+                            9:16 (Portrait)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('aspectRatio', '4:3')}
+                            selected={settings.aspectRatio === '4:3'}
+                          >
+                            4:3 (Classic)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                     {/* FPS */}
                     <div>
                       <Label className="text-xs text-muted-foreground mb-1.5 block">Frame Rate</Label>
-                      <Select
-                        value={String(settings.fps)}
-                        onValueChange={(v) => handleSettingChange('fps', Number(v) as 30 | 60)}
-                      >
-                        <SelectTrigger className="h-9 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="30" className="text-xs">30 FPS</SelectItem>
-                          <SelectItem value="60" className="text-xs">60 FPS</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="h-9 text-xs">
+                          {settings.fps} FPS
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('fps', 30)}
+                            selected={settings.fps === 30}
+                          >
+                            30 FPS
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleSettingChange('fps', 60)}
+                            selected={settings.fps === 60}
+                          >
+                            60 FPS
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
 
                     {/* Include Audio */}

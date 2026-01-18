@@ -19,7 +19,7 @@ export function Header() {
   return (
     <header className="flex h-11 items-center justify-between rounded-xl border border-border bg-card px-4 shadow-sm">
       <div className="flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary" aria-hidden="true">
           <Film className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
         <span className="text-sm font-semibold text-foreground">ISO Video</span>
@@ -28,9 +28,9 @@ export function Header() {
       {/* Resolution Info */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>{getResolutionLabel()}</span>
-        <span className="text-border">|</span>
+        <span className="text-muted-foreground/50" aria-hidden="true">|</span>
         <span>{project.settings.aspectRatio}</span>
-        <span className="text-border">|</span>
+        <span className="text-muted-foreground/50" aria-hidden="true">|</span>
         <span>{project.settings.fps} FPS</span>
       </div>
 
