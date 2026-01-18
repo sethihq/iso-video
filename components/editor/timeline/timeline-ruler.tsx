@@ -43,22 +43,29 @@ export function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
 
   return (
     <div className="relative h-6 border-b border-border bg-muted/30 shrink-0">
-      {markers.map(({ time, isMajor }) => {
+      {markers.map(({ time, isMajor }, index) => {
         const position = duration > 0 ? (time / duration) * 100 : 0;
+        const isFirst = index === 0;
+        const isLast = index === markers.length - 1;
 
         return (
           <div
             key={time}
-            className="absolute top-0 flex flex-col items-center"
+            className="absolute top-0 h-full"
             style={{ left: `${position}%` }}
           >
             <div
               className={`w-px ${
-                isMajor ? 'h-3 bg-muted-foreground/50' : 'h-2 bg-muted-foreground/30'
+                isMajor ? 'h-2.5 bg-muted-foreground/50' : 'h-1.5 bg-muted-foreground/30'
               }`}
             />
             {isMajor && (
-              <span className="absolute top-3 text-[10px] text-muted-foreground -translate-x-1/2">
+              <span
+                className="absolute top-2.5 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
+                style={{
+                  transform: isFirst ? 'translateX(0)' : isLast ? 'translateX(-100%)' : 'translateX(-50%)',
+                }}
+              >
                 {formatTime(time)}
               </span>
             )}

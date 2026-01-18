@@ -64,7 +64,7 @@ export function TimelinePlayhead({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0 z-20 pointer-events-none"
     >
       {/* Playhead */}
       <div

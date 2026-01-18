@@ -358,7 +358,7 @@ export function createScene(screenId: string, order: number): Scene {
 // Export Types
 // ============================================
 
-export type ExportFormat = 'webm' | 'gif';
+export type ExportFormat = 'mp4' | 'webm' | 'gif';
 export type ExportQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 export interface ExportPreset {
@@ -389,7 +389,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '16:9',
     resolution: '1080p',
     fps: 30,
-    format: 'webm',
+    format: 'mp4',
     quality: 'high',
   },
   {
@@ -399,7 +399,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '1:1',
     resolution: '1080p',
     fps: 30,
-    format: 'webm',
+    format: 'mp4',
     quality: 'high',
   },
   {
@@ -409,7 +409,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '1:1',
     resolution: '1080p',
     fps: 30,
-    format: 'webm',
+    format: 'mp4',
     quality: 'high',
   },
   {
@@ -419,7 +419,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '9:16',
     resolution: '1080p',
     fps: 30,
-    format: 'webm',
+    format: 'mp4',
     quality: 'high',
   },
   {
@@ -429,7 +429,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
     aspectRatio: '16:9',
     resolution: '1080p',
     fps: 60,
-    format: 'webm',
+    format: 'mp4',
     quality: 'ultra',
   },
   {
@@ -445,7 +445,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
 ];
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
-  format: 'webm',
+  format: 'mp4',
   quality: 'high',
   resolution: '1080p',
   aspectRatio: '16:9',

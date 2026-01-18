@@ -11,7 +11,12 @@ const getBrowser = async () => {
     // Serverless environment - use @sparticuz/chromium-min
     const chromium = await import('@sparticuz/chromium-min');
     return puppeteer.launch({
-      args: chromium.default.args,
+      args: [
+        ...chromium.default.args,
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--font-render-hinting=none',
+      ],
       executablePath: await chromium.default.executablePath(CHROMIUM_URL),
       headless: true,
     });
@@ -30,7 +35,9 @@ const getBrowser = async () => {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
         '--font-render-hinting=none',
+        '--disable-gpu',
       ],
     });
   }
@@ -53,6 +60,8 @@ interface DetectedSection {
 }
 
 export async function POST(request: NextRequest) {
+  let browser = null;
+
   try {
     const body: CaptureRequest = await request.json();
     const {
@@ -66,28 +75,178 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const browser = await getBrowser();
-
+    browser = await getBrowser();
     const page = await browser.newPage();
+
+    // Set a realistic user agent
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
 
     // Set high-quality viewport
     await page.setViewport({
       width: viewportWidth,
       height: viewportHeight,
-      deviceScaleFactor, // 2x for retina-quality
+      deviceScaleFactor,
     });
 
-    // Enable high-quality image rendering
-    await page.emulateMediaFeatures([
-      { name: 'prefers-reduced-motion', value: 'reduce' },
-    ]);
+    // Block unnecessary resources to speed up loading
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      // Block ads and tracking but allow everything else
+      if (
+        req.url().includes('google-analytics') ||
+        req.url().includes('googletagmanager') ||
+        req.url().includes('facebook.com/tr') ||
+        req.url().includes('doubleclick.net')
+      ) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    // Navigate to the page
+    await page.goto(url, {
+      waitUntil: 'networkidle0',
+      timeout: 60000
+    });
 
-    // Wait for fonts and lazy-loaded content
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for initial content
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Detect sections using DOM analysis with improved deduplication
+    // Scroll through the entire page to trigger lazy-loaded content
+    await page.evaluate(async () => {
+      const totalHeight = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight
+      );
+      const viewportHeight = window.innerHeight;
+      let scrolled = 0;
+
+      while (scrolled < totalHeight) {
+        window.scrollTo(0, scrolled);
+        scrolled += viewportHeight * 0.8;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      // Scroll back to top
+      window.scrollTo(0, 0);
+    });
+
+    // Wait for lazy-loaded images to load
+    await page.evaluate(async () => {
+      // Wait for all images to load
+      const images = Array.from(document.querySelectorAll('img'));
+      await Promise.all(
+        images.map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.addEventListener('load', resolve);
+            img.addEventListener('error', resolve);
+            // Timeout after 5 seconds per image
+            setTimeout(resolve, 5000);
+          });
+        })
+      );
+
+      // Wait for background images by checking computed styles
+      const elements = document.querySelectorAll('*');
+      const bgImagePromises: Promise<void>[] = [];
+
+      elements.forEach((el) => {
+        const style = window.getComputedStyle(el);
+        const bgImage = style.backgroundImage;
+        if (bgImage && bgImage !== 'none' && bgImage.includes('url(')) {
+          const urlMatch = bgImage.match(/url\(["']?([^"')]+)["']?\)/);
+          if (urlMatch) {
+            const img = new Image();
+            bgImagePromises.push(
+              new Promise((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+                setTimeout(() => resolve(), 3000);
+                img.src = urlMatch[1];
+              })
+            );
+          }
+        }
+      });
+
+      await Promise.all(bgImagePromises);
+    });
+
+    // Wait for fonts to load
+    await page.evaluate(async () => {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    });
+
+    // Hide common popups, banners, and overlays
+    await page.evaluate(() => {
+      const selectorsToHide = [
+        '[class*="cookie"]',
+        '[class*="Cookie"]',
+        '[class*="consent"]',
+        '[class*="Consent"]',
+        '[class*="popup"]',
+        '[class*="Popup"]',
+        '[class*="modal"]',
+        '[class*="Modal"]',
+        '[class*="banner"]',
+        '[class*="overlay"]',
+        '[class*="newsletter"]',
+        '[id*="cookie"]',
+        '[id*="consent"]',
+        '[id*="popup"]',
+        '[id*="modal"]',
+        '[aria-modal="true"]',
+        '[role="dialog"]',
+      ];
+
+      selectorsToHide.forEach((selector) => {
+        try {
+          document.querySelectorAll(selector).forEach((el) => {
+            const element = el as HTMLElement;
+            const style = window.getComputedStyle(element);
+            // Only hide if it's positioned fixed/sticky (likely an overlay)
+            if (style.position === 'fixed' || style.position === 'sticky') {
+              element.style.display = 'none';
+            }
+          });
+        } catch {
+          // Ignore selector errors
+        }
+      });
+
+      // Remove any backdrop overlays
+      document.querySelectorAll('[class*="backdrop"], [class*="overlay"]').forEach((el) => {
+        const element = el as HTMLElement;
+        const style = window.getComputedStyle(element);
+        if (style.position === 'fixed' && parseFloat(style.opacity) < 1) {
+          element.style.display = 'none';
+        }
+      });
+    });
+
+    // Disable animations for cleaner screenshots
+    await page.addStyleTag({
+      content: `
+        *, *::before, *::after {
+          animation-duration: 0s !important;
+          animation-delay: 0s !important;
+          transition-duration: 0s !important;
+          transition-delay: 0s !important;
+        }
+      `,
+    });
+
+    // Final wait for any remaining content
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // Detect sections using DOM analysis
     const detectedSections = await page.evaluate((vh) => {
       interface RawSection {
         id: string;
@@ -98,7 +257,6 @@ export async function POST(request: NextRequest) {
       }
       const sections: RawSection[] = [];
 
-      // Helper to check if element is visible and significant
       const isVisible = (el: Element): boolean => {
         const rect = el.getBoundingClientRect();
         const style = window.getComputedStyle(el);
@@ -109,27 +267,22 @@ export async function POST(request: NextRequest) {
                parseFloat(style.opacity) > 0.1;
       };
 
-      // Check if two bounds significantly overlap (more than 70%)
       const overlaps = (a: { y: number; height: number }, b: { y: number; height: number }): boolean => {
         const aTop = a.y;
         const aBottom = a.y + a.height;
         const bTop = b.y;
         const bBottom = b.y + b.height;
-
         const overlapStart = Math.max(aTop, bTop);
         const overlapEnd = Math.min(aBottom, bBottom);
         const overlapHeight = Math.max(0, overlapEnd - overlapStart);
-
         const smallerHeight = Math.min(a.height, b.height);
         return overlapHeight > smallerHeight * 0.7;
       };
 
-      // Check if bounds is already covered by existing section
       const isDuplicate = (bounds: { y: number; height: number }): boolean => {
         return sections.some(s => overlaps(s.bounds, bounds));
       };
 
-      // Helper to classify section type
       const classifySection = (el: Element, isFirstSection: boolean): { type: string; label: string; confidence: number } => {
         const text = (el.textContent || '').toLowerCase().slice(0, 1000);
         const className = (el.className || '').toString().toLowerCase();
@@ -137,48 +290,34 @@ export async function POST(request: NextRequest) {
         const tagName = el.tagName.toLowerCase();
         const combined = `${className} ${id}`;
 
-        // Hero detection - first visible section or explicit markers
         if (isFirstSection) {
           return { type: 'hero', label: 'Hero Section', confidence: 0.95 };
         }
         if (/hero|banner|jumbotron|masthead|landing|intro/.test(combined)) {
           return { type: 'hero', label: 'Hero Section', confidence: 0.9 };
         }
-
-        // Footer detection - check tag first
         if (tagName === 'footer' || /footer/.test(combined)) {
           return { type: 'footer', label: 'Footer', confidence: 0.95 };
         }
         if (/copyright|©|\d{4}.*rights|legal/.test(text.slice(-200))) {
           return { type: 'footer', label: 'Footer', confidence: 0.85 };
         }
-
-        // Features detection
         if (/feature|benefit|service|solution|capability|what-we|why-/.test(combined)) {
           return { type: 'features', label: 'Features', confidence: 0.85 };
         }
-
-        // Pricing detection
         if (/pricing|price|plan|subscription|tier|package/.test(combined) ||
             /\$\d+|\€\d+|\/month|\/year|free tier/i.test(text)) {
           return { type: 'pricing', label: 'Pricing', confidence: 0.9 };
         }
-
-        // Testimonials detection
         if (/testimonial|review|customer|quote|feedback|said|trust|logo/.test(combined)) {
           return { type: 'testimonials', label: 'Testimonials', confidence: 0.85 };
         }
-
-        // CTA detection
         if (/cta|call-to-action|get-started|sign-?up|try-|start-|join|newsletter/.test(combined)) {
           return { type: 'cta', label: 'Call to Action', confidence: 0.8 };
         }
-
-        // Default to content with a descriptive label
         return { type: 'content', label: 'Content Section', confidence: 0.5 };
       };
 
-      // Strategy 1: Find semantic section elements (prioritize these)
       const semanticSelectors = [
         'main > section',
         'main > article',
@@ -189,6 +328,8 @@ export async function POST(request: NextRequest) {
         '#app > section',
         '#__next > section',
         '#__next > div > section',
+        '#__next > main > section',
+        '#__next > main > div > section',
         'section[class]',
         '[class*="section-"]',
         '[class*="Section"]',
@@ -208,7 +349,6 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // Process found elements
       foundElements.forEach((el) => {
         const rect = el.getBoundingClientRect();
         const bounds = {
@@ -218,13 +358,9 @@ export async function POST(request: NextRequest) {
           height: Math.round(rect.height),
         };
 
-        // Skip if too small
         if (bounds.height < 200 || bounds.width < 300) return;
-
-        // Skip if this region is already covered
         if (isDuplicate(bounds)) return;
 
-        // Skip sections that are mostly empty
         const textLength = (el.textContent || '').trim().length;
         const hasMedia = el.querySelector('img, video, canvas, svg, iframe');
         if (textLength < 30 && !hasMedia) return;
@@ -239,7 +375,7 @@ export async function POST(request: NextRequest) {
         });
       });
 
-      // Strategy 2: If we found very few sections, use viewport-based chunks
+      // Fallback: viewport-based chunks if few sections found
       if (sections.length < 3) {
         const body = document.body;
         const totalHeight = Math.max(body.scrollHeight, document.documentElement.scrollHeight);
@@ -279,10 +415,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Sort by vertical position
       sections.sort((a, b) => a.bounds.y - b.bounds.y);
 
-      // Remove any remaining overlapping sections (keep higher confidence)
       const filtered: RawSection[] = [];
       for (const section of sections) {
         const overlapping = filtered.find(s => overlaps(s.bounds, section.bounds));
@@ -294,7 +428,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Assign final IDs and durations
       return filtered.map((s, i) => ({
         ...s,
         id: `section-${i}-${Date.now()}`,
@@ -304,7 +437,7 @@ export async function POST(request: NextRequest) {
       }));
     }, viewportHeight) as DetectedSection[];
 
-    // Get page dimensions for accurate scaling
+    // Get page dimensions
     const pageHeight = await page.evaluate(() =>
       Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
     );
@@ -323,25 +456,23 @@ export async function POST(request: NextRequest) {
     const imgWidth = metadata.width || viewportWidth * deviceScaleFactor;
     const imgHeight = metadata.height || viewportHeight * deviceScaleFactor;
 
-    // Scale factor from viewport to actual screenshot pixels
     const scaleX = imgWidth / viewportWidth;
     const scaleY = imgHeight / pageHeight;
 
-    // Create high-quality page thumbnail (for preview in UI)
+    // Create high-quality page thumbnail
     const thumbnail = await sharp(imageBuffer)
       .resize(600, Math.min(1200, Math.round(imgHeight * (600 / imgWidth))), {
         fit: 'cover',
         position: 'top',
-        kernel: 'lanczos3', // High-quality downscaling
+        kernel: 'lanczos3',
       })
-      .png({ quality: 100, compressionLevel: 6 })
+      .png({ compressionLevel: 6 })
       .toBuffer();
 
     // Generate high-quality section images
     const sectionsWithThumbnails = await Promise.all(
       detectedSections.slice(0, 10).map(async (section) => {
         try {
-          // Scale bounds to match actual screenshot dimensions
           const scaledBounds = {
             left: Math.round(section.bounds.x * scaleX),
             top: Math.round(section.bounds.y * scaleY),
@@ -349,7 +480,6 @@ export async function POST(request: NextRequest) {
             height: Math.round(section.bounds.height * scaleY),
           };
 
-          // Clamp bounds to image dimensions
           const safeLeft = Math.max(0, Math.min(scaledBounds.left, imgWidth - 10));
           const safeTop = Math.max(0, Math.min(scaledBounds.top, imgHeight - 10));
           const safeWidth = Math.max(100, Math.min(scaledBounds.width, imgWidth - safeLeft));
@@ -359,7 +489,6 @@ export async function POST(request: NextRequest) {
             return { ...section, thumbnail: undefined, sectionImage: undefined };
           }
 
-          // Extract full-resolution section image
           const sectionCrop = await sharp(imageBuffer)
             .extract({
               left: safeLeft,
@@ -367,25 +496,22 @@ export async function POST(request: NextRequest) {
               width: safeWidth,
               height: safeHeight,
             })
-            .png({ quality: 100, compressionLevel: 6 })
+            .png({ compressionLevel: 6 })
             .toBuffer();
 
-          // Create smaller thumbnail for list preview
           const sectionThumb = await sharp(sectionCrop)
             .resize(400, 250, {
               fit: 'cover',
               position: 'top',
               kernel: 'lanczos3',
             })
-            .png({ quality: 100, compressionLevel: 6 })
+            .png({ compressionLevel: 6 })
             .toBuffer();
 
           return {
             ...section,
             thumbnail: `data:image/png;base64,${sectionThumb.toString('base64')}`,
-            // Store full section image for video rendering
             sectionImage: `data:image/png;base64,${sectionCrop.toString('base64')}`,
-            // Store actual pixel dimensions
             pixelBounds: {
               x: safeLeft,
               y: safeTop,
@@ -401,6 +527,7 @@ export async function POST(request: NextRequest) {
     );
 
     await browser.close();
+    browser = null;
 
     return NextResponse.json({
       url,
@@ -414,6 +541,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Capture error:', error);
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Capture failed' },
       { status: 500 }

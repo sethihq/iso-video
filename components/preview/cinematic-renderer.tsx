@@ -59,10 +59,10 @@ function FullScreenSection({
   const transform = scene.transform;
   const camera = scene.camera || DEFAULT_SECTION_CAMERA;
 
-  // Calculate scroll position - smooth linear interpolation
+  // Calculate scroll position - gentle panning effect
   const scrollY = useMemo(() => {
-    // How much to scroll (percentage of overflow)
-    const scrollRange = 25; // Scroll through 25% of the image
+    // Gentle scroll (percentage of overflow) - reduced since sections are already cropped
+    const scrollRange = 10;
 
     if (camera.moveDirection === 'bottom-to-top') {
       return scrollRange * (1 - progress);
@@ -74,7 +74,7 @@ function FullScreenSection({
   }, [progress, camera.moveDirection]);
 
   const scrollX = useMemo(() => {
-    const panRange = 10;
+    const panRange = 5;
     if (camera.moveDirection === 'left-to-right') {
       return panRange * progress;
     } else if (camera.moveDirection === 'right-to-left') {
@@ -131,21 +131,21 @@ function FullScreenSection({
         >
           {/* Scrolling Image */}
           <div
-            className="absolute"
+            className="absolute inset-0 flex items-center justify-center"
             style={{
-              width: '100%',
-              height: '140%', // Taller to allow scrolling
-              top: `-${scrollY}%`,
-              left: `-${scrollX}%`,
-              transition: 'top 0.05s linear, left 0.05s linear',
+              transform: `translateY(-${scrollY * 0.3}%)`,
+              transition: 'transform 0.05s linear',
             }}
           >
             {screen.imageUrl ? (
               <img
                 src={screen.imageUrl}
                 alt=""
-                className="w-full h-full object-cover"
-                style={{ objectPosition: 'top center' }}
+                className="w-full h-full"
+                style={{
+                  objectFit: 'contain',
+                  objectPosition: 'center top',
+                }}
                 draggable={false}
               />
             ) : (

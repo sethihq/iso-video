@@ -3,6 +3,7 @@
 import { useTheme } from 'next-themes';
 import { useSyncExternalStore } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 // Safe hydration check using useSyncExternalStore
@@ -71,13 +72,20 @@ function ThemeButton({
       onClick={onClick}
       aria-label={label}
       className={cn(
-        'flex h-6 w-6 items-center justify-center rounded-full transition-all',
+        'relative flex h-6 w-6 items-center justify-center rounded-full transition-colors',
         isActive
-          ? 'bg-background text-foreground shadow-sm'
+          ? 'text-foreground'
           : 'text-muted-foreground hover:text-foreground'
       )}
     >
-      {children}
+      {isActive && (
+        <motion.div
+          layoutId="themeActiveIndicator"
+          className="absolute inset-0 bg-background rounded-full shadow-sm"
+          transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
+        />
+      )}
+      <span className="relative z-10">{children}</span>
     </button>
   );
 }
