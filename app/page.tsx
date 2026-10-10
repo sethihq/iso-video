@@ -1,14 +1,14 @@
 import { Header } from '@/components/editor/header';
 import { EditorLayout } from '@/components/editor/editor-layout';
 import { Timeline } from '@/components/editor/timeline';
-import { KeyboardHandler } from '@/components/editor/keyboard-handler';
+import { EditorRuntime } from '@/components/editor/editor-runtime';
 import { KeyboardShortcutsModal } from '@/components/editor/keyboard-shortcuts-modal';
 
 export default function EditorPage() {
   return (
     <div className="flex h-screen max-h-screen flex-col bg-muted/40 overflow-hidden p-3 gap-3">
-      {/* Keyboard shortcuts handler */}
-      <KeyboardHandler />
+      {/* Saved project, keyboard shortcuts and music playback */}
+      <EditorRuntime />
       <KeyboardShortcutsModal />
 
       {/* Header - floating */}

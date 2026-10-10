@@ -1,507 +1,77 @@
 /**
- * High-Quality Video Export
- *
- * Renders scenes with proper transforms and high-quality images.
- * Supports WebM, MP4 (via FFmpeg.wasm), and GIF formats.
+ * Video export. Frames come from the same frame builder and WebGL renderer
+ * as the preview, so the file matches what the editor shows. MP4 and WebM
+ * are encoded with WebCodecs through Mediabunny at exact timestamps (faster
+ * than real time, independent of display rate and tab focus), with the
+ * background music muxed in. GIFs are encoded frame by frame with gifenc.
  */
 
-import GIF from 'gif.js-upgrade';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
-import { ExportFormat } from './types';
+import type { Project, ExportFormat, ExportQuality } from './types';
+import { buildFrame, getSceneTimings } from './render/frame';
+import { Compositor } from './render/compositor';
+import { decodeBitmap } from './render/images';
+import { GIF_FPS, gifDimensions, videoBitrate } from './export-settings';
 
 export interface ExportOptions {
   width: number;
   height: number;
   fps: number;
-  quality: 'low' | 'medium' | 'high' | 'ultra';
+  quality: ExportQuality;
   format: ExportFormat;
+  includeAudio: boolean;
+  signal?: AbortSignal;
   onProgress?: (progress: number) => void;
 }
 
-export interface SceneExportData {
-  imageUrl: string;
-  duration: number;
-  transform: {
-    rotateX: number;
-    rotateY: number;
-    rotateZ: number;
-    scale: number;
-    perspective: number;
-  };
+export class ExportCancelledError extends Error {
+  constructor() {
+    super('Export cancelled');
+    this.name = 'ExportCancelledError';
+  }
 }
 
-const QUALITY_BITRATE: Record<string, number> = {
-  low: 4_000_000,
-  medium: 8_000_000,
-  high: 16_000_000,
-  ultra: 32_000_000,
+// Leave room for the horizontal-pan zoom when picking texture sizes
+const TEXTURE_HEADROOM = 1.25;
+const AUDIO_SAMPLE_RATE = 48000;
+const AUDIO_BITRATE = 192_000;
+const AUDIO_FADE_OUT = 1.5; // seconds
+const AUDIO_CHUNK = 1; // seconds of audio handed to the muxer at a time
+const GIF_COLORS: Record<ExportQuality, number> = { low: 64, medium: 128, high: 256, ultra: 256 };
+
+const yieldToMain = (): Promise<void> => {
+  const scheduler = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  return scheduler?.yield ? scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-// GIF quality settings (lower = better quality, slower)
-const GIF_QUALITY: Record<string, number> = {
-  low: 20,
-  medium: 10,
-  high: 5,
-  ultra: 1,
-};
-
-/**
- * Loads an image and returns it as an HTMLImageElement
- */
-async function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Failed to load image: ${src.substring(0, 100)}`));
-    img.src = src;
-  });
+function throwIfCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) throw new ExportCancelledError();
 }
 
-/**
- * Applies 3D transform to image and draws to canvas with high quality
- */
-function drawSceneFrame(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  width: number,
-  height: number,
-  transform: SceneExportData['transform'],
-  _progress: number
-) {
-  // Clear with background
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(0, 0, width, height);
+/** Renders the project and returns the encoded file. */
+export async function exportVideo(project: Project, options: ExportOptions): Promise<Blob> {
+  const { total } = getSceneTimings(project.scenes);
+  if (project.scenes.length === 0 || total <= 0) throw new Error('No scenes to export');
 
-  ctx.save();
+  const isGif = options.format === 'gif';
+  const size = isGif ? gifDimensions(options.width, options.height) : { width: options.width, height: options.height };
+  const canvas = createCanvas(size.width, size.height);
+  const compositor = new Compositor(canvas, { preserveDrawingBuffer: true });
+  const report = (value: number) => options.onProgress?.(Math.min(100, Math.max(0, value)));
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-
-  const padding = 0.1;
-  const availableWidth = width * (1 - padding * 2);
-  const availableHeight = height * (1 - padding * 2);
-
-  const imgAspect = img.width / img.height;
-  const frameAspect = availableWidth / availableHeight;
-
-  let drawWidth: number;
-  let drawHeight: number;
-
-  if (imgAspect > frameAspect) {
-    drawWidth = availableWidth;
-    drawHeight = drawWidth / imgAspect;
-  } else {
-    drawHeight = availableHeight;
-    drawWidth = drawHeight * imgAspect;
-  }
-
-  drawWidth *= transform.scale;
-  drawHeight *= transform.scale;
-
-  const x = (width - drawWidth) / 2;
-  const y = (height - drawHeight) / 2;
-
-  ctx.translate(width / 2, height / 2);
-  ctx.rotate((transform.rotateZ * Math.PI) / 180);
-
-  const skewX = Math.tan((transform.rotateY * Math.PI) / 180) * 0.5;
-  const skewY = Math.tan((transform.rotateX * Math.PI) / 180) * 0.3;
-  ctx.transform(1, skewY, skewX, 1, 0, 0);
-
-  ctx.translate(-width / 2, -height / 2);
-
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  ctx.shadowBlur = 30;
-  ctx.shadowOffsetX = 10;
-  ctx.shadowOffsetY = 15;
-
-  const radius = 12;
-  ctx.beginPath();
-  ctx.roundRect(x, y, drawWidth, drawHeight, radius);
-  ctx.clip();
-
-  ctx.drawImage(img, x, y, drawWidth, drawHeight);
-
-  ctx.restore();
-}
-
-/**
- * Draws a smooth transition between two scenes
- */
-function drawTransitionFrame(
-  ctx: CanvasRenderingContext2D,
-  imgFrom: HTMLImageElement | null,
-  imgTo: HTMLImageElement,
-  width: number,
-  height: number,
-  transformFrom: SceneExportData['transform'] | null,
-  transformTo: SceneExportData['transform'],
-  transitionProgress: number
-) {
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(0, 0, width, height);
-
-  const ease = (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  const eased = ease(transitionProgress);
-
-  if (imgFrom && transformFrom && transitionProgress < 0.5) {
-    ctx.save();
-    ctx.globalAlpha = 1 - eased;
-    drawSceneFrame(ctx, imgFrom, width, height, transformFrom, 1);
-    ctx.restore();
-  }
-
-  ctx.save();
-  ctx.globalAlpha = eased;
-  drawSceneFrame(ctx, imgTo, width, height, transformTo, 0);
-  ctx.restore();
-}
-
-/**
- * Render frames to canvas and return as WebM blob
- */
-async function renderToWebM(
-  scenes: SceneExportData[],
-  options: ExportOptions
-): Promise<Blob> {
-  const { width, height, fps, quality, onProgress } = options;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', {
-    alpha: false,
-    desynchronized: true
-  })!;
-
-  const mimeType = 'video/webm;codecs=vp9';
-  if (!MediaRecorder.isTypeSupported(mimeType)) {
-    throw new Error('WebM VP9 not supported. Please use Chrome or Edge.');
-  }
-
-  const stream = canvas.captureStream(fps);
-  const mediaRecorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: QUALITY_BITRATE[quality],
-  });
-
-  const chunks: Blob[] = [];
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-
-  onProgress?.(0);
-  const images: HTMLImageElement[] = [];
-
-  for (let i = 0; i < scenes.length; i++) {
-    const img = await loadImage(scenes[i].imageUrl);
-    images.push(img);
-    onProgress?.(((i + 1) / scenes.length) * 10);
-  }
-
-  const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
-  const frameDuration = 1000 / fps;
-  const totalFrames = Math.ceil(totalDuration / frameDuration);
-  const transitionDuration = 300;
-
-  mediaRecorder.start(100);
-
-  let currentTime = 0;
-  let currentSceneIndex = 0;
-  let sceneStartTime = 0;
-
-  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-    while (
-      currentSceneIndex < scenes.length - 1 &&
-      currentTime >= sceneStartTime + scenes[currentSceneIndex].duration
-    ) {
-      sceneStartTime += scenes[currentSceneIndex].duration;
-      currentSceneIndex++;
-    }
-
-    const scene = scenes[currentSceneIndex];
-    const img = images[currentSceneIndex];
-    const sceneTime = currentTime - sceneStartTime;
-    const sceneProgress = sceneTime / scene.duration;
-
-    const isInEntryTransition = sceneTime < transitionDuration && currentSceneIndex > 0;
-    const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
-
-    if (isInEntryTransition) {
-      const transitionProgress = sceneTime / transitionDuration;
-      const prevImg = images[currentSceneIndex - 1];
-      const prevTransform = scenes[currentSceneIndex - 1].transform;
-      drawTransitionFrame(ctx, prevImg, img, width, height, prevTransform, scene.transform, transitionProgress);
-    } else if (isInExitTransition) {
-      const timeIntoTransition = sceneTime - (scene.duration - transitionDuration);
-      const transitionProgress = timeIntoTransition / transitionDuration;
-      const nextImg = images[currentSceneIndex + 1];
-      const nextTransform = scenes[currentSceneIndex + 1].transform;
-      drawTransitionFrame(ctx, img, nextImg, width, height, scene.transform, nextTransform, transitionProgress);
-    } else {
-      drawSceneFrame(ctx, img, width, height, scene.transform, sceneProgress);
-    }
-
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-
-    currentTime += frameDuration;
-    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 70);
-  }
-
-  mediaRecorder.stop();
-
-  return new Promise((resolve, reject) => {
-    mediaRecorder.onstop = () => {
-      try {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        resolve(blob);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    mediaRecorder.onerror = (e) => reject(e);
-  });
-}
-
-// Singleton FFmpeg instance
-let ffmpegInstance: FFmpeg | null = null;
-let ffmpegLoaded = false;
-let ffmpegLoading: Promise<void> | null = null;
-
-/**
- * Get or create FFmpeg instance with local files
- */
-async function getFFmpeg(onProgress?: (progress: number) => void): Promise<FFmpeg> {
-  if (ffmpegInstance && ffmpegLoaded) {
-    return ffmpegInstance;
-  }
-
-  if (ffmpegLoading) {
-    await ffmpegLoading;
-    return ffmpegInstance!;
-  }
-
-  ffmpegInstance = new FFmpeg();
-
-  ffmpegLoading = (async () => {
-    onProgress?.(80);
-
-    // Create blob URLs from local files to avoid CORS issues
-    const baseURL = '/ffmpeg';
-    const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
-    const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
-
-    await ffmpegInstance!.load({
-      coreURL,
-      wasmURL,
-    });
-
-    ffmpegLoaded = true;
-    onProgress?.(85);
-  })();
-
-  await ffmpegLoading;
-  return ffmpegInstance!;
-}
-
-/**
- * Convert WebM to MP4 using FFmpeg.wasm
- */
-async function convertToMP4(
-  webmBlob: Blob,
-  onProgress?: (progress: number) => void
-): Promise<Blob> {
-  const ffmpeg = await getFFmpeg(onProgress);
-
-  ffmpeg.on('progress', ({ progress }) => {
-    onProgress?.(85 + progress * 14);
-  });
-
-  // Write input file
-  const webmData = new Uint8Array(await webmBlob.arrayBuffer());
-  await ffmpeg.writeFile('input.webm', webmData);
-
-  // Convert to MP4 with H.264 codec
-  await ffmpeg.exec([
-    '-i', 'input.webm',
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '23',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    'output.mp4'
-  ]);
-
-  // Read output file
-  const mp4Data = await ffmpeg.readFile('output.mp4');
-  const mp4Blob = new Blob([mp4Data as BlobPart], { type: 'video/mp4' });
-
-  // Cleanup
-  await ffmpeg.deleteFile('input.webm');
-  await ffmpeg.deleteFile('output.mp4');
-
-  onProgress?.(100);
-  return mp4Blob;
-}
-
-/**
- * Export as WebM video
- */
-async function exportAsWebM(
-  scenes: SceneExportData[],
-  options: ExportOptions
-): Promise<Blob> {
-  const blob = await renderToWebM(scenes, options);
-  options.onProgress?.(100);
-  return blob;
-}
-
-/**
- * Export as MP4 video (WebM -> MP4 conversion)
- */
-async function exportAsMP4(
-  scenes: SceneExportData[],
-  options: ExportOptions
-): Promise<Blob> {
   try {
-    // First render to WebM
-    const webmBlob = await renderToWebM(scenes, options);
+    report(0);
+    await loadTextures(project, compositor, size.width, options.signal, (p) => report(p * 5));
 
-    // Then convert to MP4
-    const mp4Blob = await convertToMP4(webmBlob, options.onProgress);
-
-    return mp4Blob;
-  } catch (error) {
-    console.error('MP4 export failed:', error);
-    throw new Error(
-      'MP4 export failed. Please try WebM format instead.'
-    );
+    return isGif
+      ? await encodeGif(project, compositor, canvas, total, options, (p) => report(5 + p * 95))
+      : await encodeVideo(project, compositor, canvas, total, options, (p) => report(5 + p * 95));
+  } finally {
+    // Free the GPU context now; browsers cap live contexts and would drop the preview's
+    compositor.release();
   }
 }
 
-/**
- * Export as GIF using gif.js
- */
-async function exportAsGIF(
-  scenes: SceneExportData[],
-  options: ExportOptions
-): Promise<Blob> {
-  const { width, height, fps, quality, onProgress } = options;
-
-  const gifWidth = Math.min(width, 800);
-  const gifHeight = Math.round(gifWidth * (height / width));
-  const gifFps = Math.min(fps, 15);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = gifWidth;
-  canvas.height = gifHeight;
-  const ctx = canvas.getContext('2d', { alpha: false })!;
-
-  const gif = new GIF({
-    workers: 2,
-    quality: GIF_QUALITY[quality],
-    width: gifWidth,
-    height: gifHeight,
-    workerScript: '/gif.worker.js',
-  });
-
-  onProgress?.(0);
-  const images: HTMLImageElement[] = [];
-
-  for (let i = 0; i < scenes.length; i++) {
-    const img = await loadImage(scenes[i].imageUrl);
-    images.push(img);
-    onProgress?.(((i + 1) / scenes.length) * 10);
-  }
-
-  const totalDuration = scenes.reduce((acc, s) => acc + s.duration, 0);
-  const frameDuration = 1000 / gifFps;
-  const totalFrames = Math.ceil(totalDuration / frameDuration);
-  const transitionDuration = 300;
-
-  let currentTime = 0;
-  let currentSceneIndex = 0;
-  let sceneStartTime = 0;
-
-  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-    while (
-      currentSceneIndex < scenes.length - 1 &&
-      currentTime >= sceneStartTime + scenes[currentSceneIndex].duration
-    ) {
-      sceneStartTime += scenes[currentSceneIndex].duration;
-      currentSceneIndex++;
-    }
-
-    const scene = scenes[currentSceneIndex];
-    const img = images[currentSceneIndex];
-    const sceneTime = currentTime - sceneStartTime;
-    const sceneProgress = sceneTime / scene.duration;
-
-    const isInEntryTransition = sceneTime < transitionDuration && currentSceneIndex > 0;
-    const isInExitTransition = sceneTime > scene.duration - transitionDuration && currentSceneIndex < scenes.length - 1;
-
-    if (isInEntryTransition) {
-      const transitionProgress = sceneTime / transitionDuration;
-      const prevImg = images[currentSceneIndex - 1];
-      const prevTransform = scenes[currentSceneIndex - 1].transform;
-      drawTransitionFrame(ctx, prevImg, img, gifWidth, gifHeight, prevTransform, scene.transform, transitionProgress);
-    } else if (isInExitTransition) {
-      const timeIntoTransition = sceneTime - (scene.duration - transitionDuration);
-      const transitionProgress = timeIntoTransition / transitionDuration;
-      const nextImg = images[currentSceneIndex + 1];
-      const nextTransform = scenes[currentSceneIndex + 1].transform;
-      drawTransitionFrame(ctx, img, nextImg, gifWidth, gifHeight, scene.transform, nextTransform, transitionProgress);
-    } else {
-      drawSceneFrame(ctx, img, gifWidth, gifHeight, scene.transform, sceneProgress);
-    }
-
-    gif.addFrame(ctx, { copy: true, delay: frameDuration });
-
-    currentTime += frameDuration;
-    onProgress?.(10 + ((frameIndex + 1) / totalFrames) * 60);
-  }
-
-  return new Promise((resolve, reject) => {
-    gif.on('finished', (blob: Blob) => {
-      onProgress?.(100);
-      resolve(blob);
-    });
-
-    gif.on('progress', (p: number) => {
-      onProgress?.(70 + p * 30);
-    });
-
-    gif.render();
-  });
-}
-
-/**
- * Main export function - creates video or GIF from scenes
- */
-export async function exportScenesAsVideo(
-  scenes: SceneExportData[],
-  options: ExportOptions
-): Promise<Blob> {
-  if (scenes.length === 0) {
-    throw new Error('No scenes to export');
-  }
-
-  const format = options.format || 'webm';
-
-  if (format === 'gif') {
-    return exportAsGIF(scenes, options);
-  } else if (format === 'mp4') {
-    return exportAsMP4(scenes, options);
-  } else {
-    return exportAsWebM(scenes, options);
-  }
-}
-
-/**
- * Downloads a blob as a file
- */
+/** Saves a blob through a temporary download link. */
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -510,5 +80,220 @@ export function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Revoking right away can cancel the download in some browsers
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function createCanvas(width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+async function loadTextures(
+  project: Project,
+  compositor: Compositor,
+  outputWidth: number,
+  signal: AbortSignal | undefined,
+  onProgress: (progress: number) => void,
+) {
+  const urls = [...new Set(project.screens.map((s) => s.imageUrl).filter(Boolean))];
+  const limits = {
+    maxWidth: Math.ceil(outputWidth * TEXTURE_HEADROOM),
+    maxTexture: compositor.maxTextureSize,
+  };
+  // One at a time keeps peak memory to a single full-size image
+  for (let i = 0; i < urls.length; i++) {
+    throwIfCancelled(signal);
+    const bitmap = await decodeBitmap(urls[i], limits);
+    try {
+      throwIfCancelled(signal);
+      compositor.setTexture(urls[i], bitmap);
+    } finally {
+      bitmap.close();
+    }
+    onProgress((i + 1) / urls.length);
+  }
+}
+
+function renderFrame(compositor: Compositor, project: Project, timeMs: number) {
+  compositor.render(buildFrame(project, timeMs));
+  // A GPU reset mid-export would otherwise encode blank frames
+  if (compositor.isContextLost) throw new Error('The graphics context was lost during export. Please try again.');
+}
+
+async function encodeVideo(
+  project: Project,
+  compositor: Compositor,
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  totalMs: number,
+  options: ExportOptions,
+  onProgress: (progress: number) => void,
+): Promise<Blob> {
+  const {
+    AudioBufferSource,
+    BufferTarget,
+    CanvasSource,
+    Mp4OutputFormat,
+    Output,
+    Quality,
+    WebMOutputFormat,
+    canEncodeAudio,
+    getFirstEncodableVideoCodec,
+  } = await import('mediabunny');
+
+  const { width, height } = canvas;
+  const { fps, signal } = options;
+  const isMp4 = options.format === 'mp4';
+  const bitrate = videoBitrate(options.quality, width, height, fps);
+
+  const codec = await getFirstEncodableVideoCodec(isMp4 ? ['avc', 'hevc', 'av1'] : ['vp9', 'vp8', 'av1'], {
+    width,
+    height,
+    quality: new Quality({ bitrate }),
+  });
+  if (!codec) {
+    throw new Error(
+      isMp4
+        ? 'This browser cannot encode MP4 video. Try WebM, or a recent Chrome, Edge or Safari.'
+        : 'This browser cannot encode WebM video. Try MP4.',
+    );
+  }
+
+  const output = new Output({
+    format: isMp4 ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
+    target: new BufferTarget(),
+  });
+
+  const video = new CanvasSource(canvas, { codec, quality: new Quality({ bitrate }), keyFrameInterval: 2 });
+  output.addVideoTrack(video, { frameRate: fps });
+
+  // Background music, mixed to the video's length with a fade at the end
+  const soundtrack = options.includeAudio ? await renderSoundtrack(project, totalMs / 1000) : null;
+  let audio: InstanceType<typeof AudioBufferSource> | null = null;
+  if (soundtrack) {
+    const audioCodec = isMp4 ? 'aac' : 'opus';
+    const audioSupported = await canEncodeAudio(audioCodec, { numberOfChannels: 2, sampleRate: AUDIO_SAMPLE_RATE });
+    if (!audioSupported && isMp4) {
+      // Some browsers (Firefox, Chrome on Linux) ship no AAC encoder
+      const { registerAacEncoder } = await import('@mediabunny/aac-encoder');
+      registerAacEncoder();
+    } else if (!audioSupported) {
+      throw new Error("This browser can't encode WebM audio. Export MP4, or turn off Include Audio.");
+    }
+    audio = new AudioBufferSource({ codec: audioCodec, quality: new Quality({ bitrate: AUDIO_BITRATE }) });
+    output.addAudioTrack(audio);
+  }
+  const audioChunks = soundtrack ? splitAudio(soundtrack, AUDIO_CHUNK) : [];
+  let audioSent = 0;
+
+  await output.start();
+
+  try {
+    const frameCount = Math.max(1, Math.round((totalMs / 1000) * fps));
+    for (let frame = 0; frame < frameCount; frame++) {
+      throwIfCancelled(signal);
+      const seconds = frame / fps;
+
+      // Hand over audio alongside the video so the muxer can interleave them
+      while (audio && audioSent < audioChunks.length && audioSent * AUDIO_CHUNK <= seconds + AUDIO_CHUNK) {
+        await audio.add(audioChunks[audioSent++]);
+      }
+
+      renderFrame(compositor, project, seconds * 1000);
+      await video.add(seconds, 1 / fps);
+
+      onProgress((frame + 1) / frameCount);
+      if (frame % 15 === 14) await yieldToMain();
+    }
+
+    while (audio && audioSent < audioChunks.length) await audio.add(audioChunks[audioSent++]);
+    video.close();
+    audio?.close();
+    await output.finalize();
+  } catch (error) {
+    await output.cancel().catch(() => {});
+    throw error;
+  }
+
+  const buffer = output.target.buffer;
+  if (!buffer) throw new Error('The encoder produced no data');
+  return new Blob([buffer], { type: output.format.mimeType });
+}
+
+async function encodeGif(
+  project: Project,
+  compositor: Compositor,
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  totalMs: number,
+  options: ExportOptions,
+  onProgress: (progress: number) => void,
+): Promise<Blob> {
+  const { GIFEncoder, applyPalette, quantize } = await import('gifenc');
+  const { width, height } = canvas;
+  const fps = Math.min(options.fps, GIF_FPS);
+  const colors = GIF_COLORS[options.quality];
+
+  // Read frames back through a 2D canvas, which returns rows top to bottom
+  const readback = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true });
+  if (!readback) throw new Error('Canvas is not available');
+
+  const gif = GIFEncoder();
+  const frameCount = Math.max(1, Math.round((totalMs / 1000) * fps));
+  for (let frame = 0; frame < frameCount; frame++) {
+    throwIfCancelled(options.signal);
+    renderFrame(compositor, project, (frame / fps) * 1000);
+    readback.drawImage(canvas, 0, 0);
+    const { data } = readback.getImageData(0, 0, width, height);
+    const palette = quantize(data, colors);
+    const index = applyPalette(data, palette);
+
+    // GIF delays are whole centiseconds; round the running time so the length stays exact
+    const delay = (Math.round(((frame + 1) * 100) / fps) - Math.round((frame * 100) / fps)) * 10;
+    gif.writeFrame(index, width, height, { palette, delay, repeat: 0 });
+
+    onProgress((frame + 1) / frameCount);
+    await yieldToMain();
+  }
+  gif.finish();
+  return new Blob([gif.bytes() as BlobPart], { type: 'image/gif' });
+}
+
+async function renderSoundtrack(project: Project, durationSeconds: number): Promise<AudioBuffer | null> {
+  const track = project.audioTracks[0];
+  if (!track?.url) return null;
+
+  const data = await (await fetch(track.url)).arrayBuffer();
+  const length = Math.max(1, Math.ceil(durationSeconds * AUDIO_SAMPLE_RATE));
+  const context = new OfflineAudioContext(2, length, AUDIO_SAMPLE_RATE);
+  const decoded = await context.decodeAudioData(data);
+
+  const source = context.createBufferSource();
+  source.buffer = decoded;
+  const gain = context.createGain();
+  const volume = Math.min(1, Math.max(0, track.volume));
+  const fadeStart = Math.max(0, durationSeconds - AUDIO_FADE_OUT);
+  gain.gain.setValueAtTime(volume, 0);
+  gain.gain.setValueAtTime(volume, fadeStart);
+  gain.gain.linearRampToValueAtTime(0, durationSeconds);
+  source.connect(gain).connect(context.destination);
+  source.start(Math.max(0, track.startTime / 1000));
+
+  return context.startRendering();
+}
+
+function splitAudio(buffer: AudioBuffer, chunkSeconds: number): AudioBuffer[] {
+  const chunkLength = Math.round(chunkSeconds * buffer.sampleRate);
+  const chunks: AudioBuffer[] = [];
+  for (let start = 0; start < buffer.length; start += chunkLength) {
+    const length = Math.min(chunkLength, buffer.length - start);
+    const chunk = new AudioBuffer({ length, numberOfChannels: buffer.numberOfChannels, sampleRate: buffer.sampleRate });
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      chunk.copyToChannel(buffer.getChannelData(channel).subarray(start, start + length), channel);
+    }
+    chunks.push(chunk);
+  }
+  return chunks;
 }

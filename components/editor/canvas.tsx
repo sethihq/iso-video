@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   ZoomIn,
   ZoomOut,
@@ -11,24 +11,16 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useEditorStore, useSelectedScene, useSelectedScreen } from '@/lib/store';
-import { CinematicRenderer, useCinematicRendererProps } from '@/components/preview/cinematic-renderer';
-import { IsometricView } from '@/components/preview/isometric-view';
+import { useEditorStore } from '@/lib/store';
+import { usePlaybackStore } from '@/lib/playback';
+import { PreviewCanvas } from '@/components/preview/preview-canvas';
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function Canvas() {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
-  const { project, isPlaying } = useEditorStore();
-  const selectedScene = useSelectedScene();
-  const selectedScreen = useSelectedScreen();
-  const cinematicProps = useCinematicRendererProps();
-
-  // Check if we should use cinematic mode (when scenes exist)
-  const shouldUseCinematicMode = useMemo(() => {
-    return project.scenes.length > 0;
-  }, [project.scenes.length]);
+  const hasScenes = useEditorStore((s) => s.project.scenes.length > 0);
+  const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
   const handleZoomIn = useCallback(() => {
     setZoom(prev => {
@@ -51,8 +43,8 @@ export function Canvas() {
   }, []);
 
   const handleFitToView = useCallback(() => {
-    // Auto-fit: set zoom to 0.75 for better fit with 3D transforms
-    setZoom(0.75);
+    // Zoom 1 fits the whole frame inside the canvas area
+    setZoom(1);
   }, []);
 
   return (
@@ -115,37 +107,14 @@ export function Canvas() {
         </div>
       )}
 
-      {/* Canvas Area - Full viewport for 3D content */}
-      <div
-        ref={containerRef}
-        className="flex-1 flex items-center justify-center overflow-auto bg-muted/50"
-      >
-        {/* Cinematic mode - WYSIWYG (same view when playing AND paused) */}
-        {shouldUseCinematicMode ? (
-          <div className="absolute inset-0">
-            <CinematicRenderer {...cinematicProps} />
+      {/* Canvas Area: the exact frame that exports, at the export aspect ratio */}
+      <div className="relative flex-1 flex items-center justify-center overflow-hidden bg-muted/50">
+        {hasScenes ? (
+          <div className="absolute inset-x-6 top-16 bottom-6">
+            <PreviewCanvas zoom={zoom} />
           </div>
         ) : (
-          /* Fallback for when no scenes exist */
-          <div
-            className="relative flex items-center justify-center"
-            style={{
-              transform: `scale(${zoom})`,
-              transformOrigin: 'center center',
-              transition: 'transform 0.2s ease-out',
-              padding: '80px',
-            }}
-          >
-            {selectedScene && selectedScreen ? (
-              <IsometricView
-                screen={selectedScreen}
-                transform={selectedScene.transform}
-                animate={true}
-              />
-            ) : (
-              <EmptyCanvas />
-            )}
-          </div>
+          <EmptyCanvas />
         )}
       </div>
 

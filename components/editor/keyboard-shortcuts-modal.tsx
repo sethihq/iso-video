@@ -23,6 +23,7 @@ const SHORTCUTS = [
     { keys: ['L'], description: 'Next scene' },
   ]},
   { category: 'General', items: [
+    { keys: ['E'], description: 'Export video' },
     { keys: ['?'], description: 'Show keyboard shortcuts' },
   ]},
 ];

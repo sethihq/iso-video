@@ -19,6 +19,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
+import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore, useSelectedScene } from '@/lib/store';
 import {
   ISOMETRIC_PRESETS,
@@ -72,9 +73,12 @@ const TABS: { id: TabType; label: string }[] = [
 export function ControlsPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('camera');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const selectedScene = useSelectedScene();
   const {
-    project,
+    audioTracks,
+    globalCameraSettings,
+    dofProjectSettings,
     updateSceneTransform,
     updateSceneMotion,
     applyPresetToScene,
@@ -82,10 +86,26 @@ export function ControlsPanel() {
     updateSceneCamera,
     updateGlobalCamera,
     updateDOFSettings,
-    addAudioTrack,
+    addAudioFile,
     removeAudioTrack,
     updateAudioTrack,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((s) => ({
+      audioTracks: s.project.audioTracks,
+      globalCameraSettings: s.project.settings.globalCamera,
+      dofProjectSettings: s.project.settings.dof,
+      updateSceneTransform: s.updateSceneTransform,
+      updateSceneMotion: s.updateSceneMotion,
+      applyPresetToScene: s.applyPresetToScene,
+      updateSceneDuration: s.updateSceneDuration,
+      updateSceneCamera: s.updateSceneCamera,
+      updateGlobalCamera: s.updateGlobalCamera,
+      updateDOFSettings: s.updateDOFSettings,
+      addAudioFile: s.addAudioFile,
+      removeAudioTrack: s.removeAudioTrack,
+      updateAudioTrack: s.updateAudioTrack,
+    }))
+  );
 
   if (!selectedScene) {
     return (
@@ -131,8 +151,8 @@ export function ControlsPanel() {
   };
 
   const cameraSettings = selectedScene.camera || DEFAULT_SECTION_CAMERA;
-  const globalCamera = project.settings.globalCamera || DEFAULT_GLOBAL_CAMERA;
-  const dofSettings = project.settings.dof || DEFAULT_DOF;
+  const globalCamera = globalCameraSettings || DEFAULT_GLOBAL_CAMERA;
+  const dofSettings = dofProjectSettings || DEFAULT_DOF;
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
@@ -462,117 +482,6 @@ export function ControlsPanel() {
                   />
                 </div>
               </Section>
-            </motion.div>
-          )}
-
-          {activeTab === 'audio' && (
-            <motion.div
-              key="audio"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              className="p-4 space-y-5"
-              role="tabpanel"
-              id="tabpanel-audio"
-              aria-labelledby="tab-audio"
-            >
-              {/* Audio Upload */}
-              <Section title="Background Music">
-                <div className="space-y-3">
-                  {project.audioTracks.length === 0 ? (
-                    <label
-                      htmlFor="audio-upload"
-                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
-                    >
-                      <div className="flex flex-col items-center justify-center pt-3 pb-3">
-                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" aria-hidden="true" />
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium text-foreground">Upload audio</span>
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5" id="audio-format-hint">MP3, WAV, OGG</p>
-                      </div>
-                      <input
-                        id="audio-upload"
-                        type="file"
-                        className="hidden"
-                        accept="audio/*"
-                        aria-describedby="audio-format-hint"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-
-                          const url = await new Promise<string>((resolve) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result as string);
-                            reader.readAsDataURL(file);
-                          });
-
-                          // Get audio duration
-                          const audio = new Audio(url);
-                          await new Promise<void>((resolve) => {
-                            audio.onloadedmetadata = () => resolve();
-                          });
-
-                          addAudioTrack({
-                            id: `audio-${Date.now()}`,
-                            name: file.name,
-                            url,
-                            duration: audio.duration * 1000,
-                            startTime: 0,
-                            volume: 0.8,
-                          });
-                        }}
-                      />
-                    </label>
-                  ) : (
-                    <div className="space-y-2">
-                      {project.audioTracks.map((track) => (
-                        <div
-                          key={track.id}
-                          className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border"
-                        >
-                          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                            <Music className="w-4 h-4 text-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{track.name}</p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {Math.floor(track.duration / 1000)}s
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => removeAudioTrack(track.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                            aria-label={`Remove ${track.name}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </Section>
-
-              {/* Volume Control */}
-              {project.audioTracks.length > 0 && (
-                <Section title="Volume">
-                  <div className="space-y-3">
-                    {project.audioTracks.map((track) => (
-                      <CustomSlider
-                        key={track.id}
-                        label={track.name.slice(0, 20)}
-                        value={track.volume * 100}
-                        min={0}
-                        max={100}
-                        step={1}
-                        valueSubtext="%"
-                        onChange={(v) => updateAudioTrack(track.id, { volume: v / 100 })}
-                      />
-                    ))}
-                  </div>
-                </Section>
-              )}
 
               {/* Depth of Field */}
               <Section title="Depth of Field">
@@ -608,6 +517,108 @@ export function ControlsPanel() {
                   )}
                 </div>
               </Section>
+            </motion.div>
+          )}
+
+          {activeTab === 'audio' && (
+            <motion.div
+              key="audio"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 10 }}
+              className="p-4 space-y-5"
+              role="tabpanel"
+              id="tabpanel-audio"
+              aria-labelledby="tab-audio"
+            >
+              {/* Audio Upload */}
+              <Section title="Background Music">
+                <div className="space-y-3">
+                  {audioTracks.length === 0 ? (
+                    <label
+                      htmlFor="audio-upload"
+                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex flex-col items-center justify-center pt-3 pb-3">
+                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" aria-hidden="true" />
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">Upload audio</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5" id="audio-format-hint">MP3, WAV, OGG</p>
+                      </div>
+                      <input
+                        id="audio-upload"
+                        type="file"
+                        className="hidden"
+                        accept="audio/*"
+                        aria-describedby="audio-format-hint"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          setAudioError(null);
+                          try {
+                            await addAudioFile(file);
+                          } catch (error) {
+                            setAudioError(error instanceof Error ? error.message : 'Could not add this audio file');
+                          }
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <div className="space-y-2">
+                      {audioTracks.map((track) => (
+                        <div
+                          key={track.id}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border"
+                        >
+                          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                            <Music className="w-4 h-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{track.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {Math.floor(track.duration / 1000)}s
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => removeAudioTrack(track.id)}
+                            className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
+                            aria-label={`Remove ${track.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Section>
+
+              {audioError && (
+                <p className="text-xs text-destructive" role="alert">{audioError}</p>
+              )}
+
+              {/* Volume Control */}
+              {audioTracks.length > 0 && (
+                <Section title="Volume">
+                  <div className="space-y-3">
+                    {audioTracks.map((track) => (
+                      <CustomSlider
+                        key={track.id}
+                        label={track.name.slice(0, 20)}
+                        value={track.volume * 100}
+                        min={0}
+                        max={100}
+                        step={1}
+                        valueSubtext="%"
+                        onChange={(v) => updateAudioTrack(track.id, { volume: v / 100 })}
+                      />
+                    ))}
+                  </div>
+                </Section>
+              )}
+
             </motion.div>
           )}
         </AnimatePresence>

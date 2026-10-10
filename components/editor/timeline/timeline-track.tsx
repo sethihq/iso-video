@@ -4,15 +4,15 @@ import { memo, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { Trash2, GripVertical } from 'lucide-react';
 import { Scene, Screen } from '@/lib/types';
+import { usePlaybackStore } from '@/lib/playback';
+import { getSceneTimings, sceneIndexAt } from '@/lib/render/frame';
 import { cn } from '@/lib/utils';
 
 interface TimelineTrackProps {
   scenes: Scene[];
   screens: Screen[];
   selectedSceneId: string | null;
-  currentTime: number;
   totalDuration: number;
-  isPlaying: boolean;
   onSelectScene: (id: string) => void;
   onRemoveScene: (id: string) => void;
 }
@@ -21,31 +21,24 @@ export function TimelineTrack({
   scenes,
   screens,
   selectedSceneId,
-  currentTime,
   totalDuration,
-  isPlaying,
   onSelectScene,
   onRemoveScene,
 }: TimelineTrackProps) {
-  // Pre-calculate scene start times
-  const sceneStartTimes = useMemo(() => {
-    const times: Record<string, number> = {};
-    let accumulated = 0;
-    for (const scene of scenes) {
-      times[scene.id] = accumulated;
-      accumulated += scene.duration;
-    }
-    return times;
-  }, [scenes]);
+  // Clips sit at their start time on the same linear scale as the ruler and playhead
+  const timings = useMemo(() => getSceneTimings(scenes).timings, [scenes]);
+
+  // Only changes at scene boundaries, so clips don't re-render every frame
+  const playingIndex = usePlaybackStore((s) =>
+    s.isPlaying && scenes.length > 0 ? sceneIndexAt(scenes, s.currentTime) : -1
+  );
 
   return (
-    <div className="absolute inset-x-0 top-6 bottom-0 flex items-stretch px-1 gap-1">
+    <div className="absolute inset-x-0 top-6 bottom-0">
       {scenes.map((scene, index) => {
         const screen = screens.find((s) => s.id === scene.screenId);
-        const sceneStart = sceneStartTimes[scene.id] || 0;
-        const isCurrentScene =
-          currentTime >= sceneStart && currentTime < sceneStart + scene.duration;
-
+        const { start } = timings[index];
+        const leftPercent = totalDuration > 0 ? (start / totalDuration) * 100 : 0;
         const widthPercent = totalDuration > 0
           ? (scene.duration / totalDuration) * 100
           : 100 / scenes.length;
@@ -57,10 +50,11 @@ export function TimelineTrack({
             screen={screen}
             index={index}
             isSelected={selectedSceneId === scene.id}
-            isPlaying={isCurrentScene && isPlaying}
+            isPlaying={playingIndex === index}
+            leftPercent={leftPercent}
             widthPercent={widthPercent}
-            onSelect={() => onSelectScene(scene.id)}
-            onRemove={() => onRemoveScene(scene.id)}
+            onSelect={onSelectScene}
+            onRemove={onRemoveScene}
           />
         );
       })}
@@ -74,9 +68,10 @@ interface TimelineElementProps {
   index: number;
   isSelected: boolean;
   isPlaying: boolean;
+  leftPercent: number;
   widthPercent: number;
-  onSelect: () => void;
-  onRemove: () => void;
+  onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
 }
 
 const TimelineElement = memo(function TimelineElement({
@@ -85,6 +80,7 @@ const TimelineElement = memo(function TimelineElement({
   index,
   isSelected,
   isPlaying,
+  leftPercent,
   widthPercent,
   onSelect,
   onRemove,
@@ -105,8 +101,9 @@ const TimelineElement = memo(function TimelineElement({
       ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
       : undefined,
     transition,
-    width: `${widthPercent}%`,
-    minWidth: '60px',
+    // A 2px inset on each side keeps a gap between clips without shifting them off the time scale
+    left: `calc(${leftPercent}% + 2px)`,
+    width: `calc(${widthPercent}% - 4px)`,
     zIndex: isDragging ? 50 : isSelected ? 10 : 1,
     opacity: isDragging ? 0.8 : 1,
   };
@@ -117,10 +114,10 @@ const TimelineElement = memo(function TimelineElement({
       style={style}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onSelect(scene.id);
       }}
       className={cn(
-        'group relative h-full rounded-md overflow-hidden cursor-pointer border',
+        'group absolute inset-y-0 rounded-md overflow-hidden cursor-pointer border',
         isSelected ? 'border-primary ring-1 ring-primary' : 'border-border',
         isDragging && 'shadow-lg'
       )}
@@ -132,6 +129,7 @@ const TimelineElement = memo(function TimelineElement({
             src={screen.thumbnail}
             alt=""
             className="w-full h-full object-cover object-top"
+            decoding="async"
             draggable={false}
           />
         ) : (
@@ -143,15 +141,6 @@ const TimelineElement = memo(function TimelineElement({
 
       {/* Overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-
-      {/* Playing indicator */}
-      {isPlaying && (
-        <div
-          className="absolute top-1 right-1 w-2 h-2 rounded-full bg-green-500 animate-pulse"
-          role="status"
-          aria-label="Currently playing"
-        />
-      )}
 
       {/* Drag handle */}
       <div
@@ -167,7 +156,7 @@ const TimelineElement = memo(function TimelineElement({
       <button
         onClick={(e) => {
           e.stopPropagation();
-          onRemove();
+          onRemove(scene.id);
         }}
         className="absolute top-1 right-1 h-5 w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 hover:bg-red-500 text-white rounded"
         aria-label={`Remove ${screen?.section || `Scene ${index + 1}`}`}
@@ -176,9 +165,16 @@ const TimelineElement = memo(function TimelineElement({
       </button>
 
       {/* Info */}
-      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-1.5 py-1">
-        <span className="text-[10px] font-medium text-white truncate">
-          {screen?.section || `Scene ${index + 1}`}
+      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between gap-1 px-1.5 py-1">
+        <span className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white">
+          {isPlaying && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500 animate-pulse"
+              role="status"
+              aria-label="Currently playing"
+            />
+          )}
+          <span className="truncate">{screen?.section || `Scene ${index + 1}`}</span>
         </span>
         <span className="text-[10px] text-white/70">
           {(scene.duration / 1000).toFixed(1)}s

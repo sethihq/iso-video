@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -29,14 +30,12 @@ import {
   ExportSettings,
   EXPORT_PRESETS,
   DEFAULT_EXPORT_SETTINGS,
-  Resolution,
-  AspectRatio,
   ExportFormat,
 } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useEditorStore, useTotalDuration } from '@/lib/store';
-import { exportScenesAsVideo, downloadBlob, SceneExportData } from '@/lib/video-export';
-import { DEFAULT_TRANSFORM } from '@/lib/types';
+import { usePlaybackStore } from '@/lib/playback';
+import { GIF_FPS, gifDimensions, outputDimensions, videoBitrate } from '@/lib/export-settings';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -49,11 +48,11 @@ const FORMAT_OPTIONS: { value: ExportFormat; label: string; icon: typeof Film; d
   { value: 'gif', label: 'GIF', icon: Image, desc: 'Animated image' },
 ];
 
-const QUALITY_OPTIONS: { value: ExportQuality; label: string; desc: string }[] = [
-  { value: 'low', label: 'Low', desc: '~2 Mbps' },
-  { value: 'medium', label: 'Medium', desc: '~5 Mbps' },
-  { value: 'high', label: 'High', desc: '~10 Mbps' },
-  { value: 'ultra', label: 'Ultra', desc: '~20 Mbps' },
+const QUALITY_OPTIONS: { value: ExportQuality; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'ultra', label: 'Ultra' },
 ];
 
 // Lucide 1.0 removed its brand icons, so these keep the outlines lucide-react 0.562 shipped.
@@ -77,18 +76,35 @@ const PLATFORM_ICONS: Record<string, typeof Twitter> = {
   'Product Hunt': Rocket,
 };
 
-const RESOLUTION_MAP: Record<Resolution, { width: number; height: number }> = {
-  '720p': { width: 1280, height: 720 },
-  '1080p': { width: 1920, height: 1080 },
-  '4k': { width: 3840, height: 2160 },
-};
+
+const exportFileName = (format: string) => `video-${Date.now()}.${format}`;
 
 export function ExportModal({ isOpen, onClose }: ExportModalProps) {
-  const { project } = useEditorStore();
+  const { sceneCount, hasAudio, projectSettings, updateSettings, setExporting } = useEditorStore(
+    useShallow((s) => ({
+      sceneCount: s.project.scenes.length,
+      hasAudio: s.project.audioTracks.length > 0,
+      projectSettings: s.project.settings,
+      updateSettings: s.updateSettings,
+      setExporting: s.setExporting,
+    }))
+  );
   const totalDuration = useTotalDuration();
-  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS);
-  const [activePreset, setActivePreset] = useState<string | null>('twitter-landscape');
+  // Size, shape and frame rate live on the project, so the preview matches the export
+  const [options, setOptions] = useState({
+    format: DEFAULT_EXPORT_SETTINGS.format,
+    quality: DEFAULT_EXPORT_SETTINGS.quality,
+    includeAudio: DEFAULT_EXPORT_SETTINGS.includeAudio,
+  });
+  const settings: ExportSettings = {
+    ...options,
+    resolution: projectSettings.resolution,
+    aspectRatio: projectSettings.aspectRatio,
+    fps: projectSettings.fps,
+  };
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportError, setExportError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -96,101 +112,87 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const handlePresetSelect = useCallback((presetId: string) => {
     const preset = EXPORT_PRESETS.find((p) => p.id === presetId);
     if (preset) {
-      setSettings({
-        format: preset.format,
-        quality: preset.quality,
-        resolution: preset.resolution,
-        aspectRatio: preset.aspectRatio,
-        fps: preset.fps,
-        includeAudio: true,
-      });
+      setOptions({ format: preset.format, quality: preset.quality, includeAudio: true });
+      updateSettings({ resolution: preset.resolution, aspectRatio: preset.aspectRatio, fps: preset.fps });
       setActivePreset(presetId);
     }
-  }, []);
+  }, [updateSettings]);
 
   const handleSettingChange = useCallback(<K extends keyof ExportSettings>(
     key: K,
     value: ExportSettings[K]
   ) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-    setActivePreset(null); // Clear preset when manually changing
-  }, []);
-
-  const getOutputDimensions = useCallback(() => {
-    const base = RESOLUTION_MAP[settings.resolution];
-    if (settings.aspectRatio === '16:9') {
-      return base;
-    } else if (settings.aspectRatio === '1:1') {
-      const size = Math.min(base.width, base.height);
-      return { width: size, height: size };
-    } else if (settings.aspectRatio === '9:16') {
-      return { width: base.height, height: base.width };
-    } else if (settings.aspectRatio === '4:3') {
-      return { width: base.height * (4 / 3), height: base.height };
+    if (key === 'resolution' || key === 'aspectRatio' || key === 'fps') {
+      updateSettings({ [key]: value });
+    } else {
+      setOptions((prev) => ({ ...prev, [key]: value }));
     }
-    return base;
-  }, [settings.resolution, settings.aspectRatio]);
+    setActivePreset(null); // Clear preset when manually changing
+  }, [updateSettings]);
 
-  const handleExport = useCallback(async () => {
-    if (project.scenes.length === 0) return;
+  const dimensions = outputDimensions(settings.resolution, settings.aspectRatio);
 
+  const handleExport = async () => {
+    if (sceneCount === 0) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    usePlaybackStore.getState().pause();
     setIsExporting(true);
+    setExporting(true);
     setExportProgress(0);
     setExportError(null);
 
     try {
-      const dimensions = getOutputDimensions();
-      const { fps, quality, format } = settings;
+      const { width, height } = outputDimensions(settings.resolution, settings.aspectRatio);
+      const { format, quality, fps, includeAudio } = settings;
 
-      // Prepare scene data with high-quality images
-      const sceneData: SceneExportData[] = project.scenes.map((scene) => {
-        const screen = project.screens.find((s) => s.id === scene.screenId);
-        // Use imageUrl (high quality) first, fall back to thumbnail
-        const imageUrl = screen?.imageUrl || screen?.thumbnail || '';
-
-        return {
-          imageUrl,
-          duration: scene.duration,
-          transform: scene.transform || DEFAULT_TRANSFORM,
-        };
-      }).filter((s) => s.imageUrl); // Only include scenes with images
-
-      if (sceneData.length === 0) {
-        throw new Error('No valid scenes to export. Make sure scenes have images.');
-      }
-
-      // Export video with progress tracking
-      const blob = await exportScenesAsVideo(sceneData, {
-        width: dimensions.width,
-        height: dimensions.height,
+      // Loaded on demand, so the encoder isn't part of the editor's first load
+      const { exportVideo, downloadBlob } = await import('@/lib/video-export');
+      const blob = await exportVideo(useEditorStore.getState().project, {
+        width,
+        height,
         fps,
         quality,
         format,
+        includeAudio: includeAudio && format !== 'gif',
+        signal: controller.signal,
         onProgress: setExportProgress,
       });
 
-      // Download with correct extension
-      const extension = format === 'gif' ? 'gif' : format === 'mp4' ? 'mp4' : 'webm';
-      const filename = `video-${Date.now()}.${extension}`;
-      downloadBlob(blob, filename);
+      // Cancel can land while the file is being finalized
+      if (controller.signal.aborted) return;
+      downloadBlob(blob, exportFileName(format));
 
       // Brief delay to show 100%
       await new Promise((resolve) => setTimeout(resolve, 300));
       onClose();
     } catch (error) {
-      console.error('Export failed:', error);
-      setExportError(error instanceof Error ? error.message : 'Export failed');
+      if (!controller.signal.aborted) {
+        console.error('Export failed:', error);
+        setExportError(error instanceof Error ? error.message : 'Export failed');
+      }
     } finally {
+      abortRef.current = null;
       setIsExporting(false);
+      setExporting(false);
       setExportProgress(0);
     }
-  }, [project.scenes, project.screens, settings, getOutputDimensions, onClose]);
+  };
 
-  const dimensions = getOutputDimensions();
-  const estimatedSize = Math.round(
-    (totalDuration / 1000) *
-      (settings.quality === 'ultra' ? 2.5 : settings.quality === 'high' ? 1.25 : settings.quality === 'medium' ? 0.625 : 0.25)
-  );
+  const handleCancelExport = () => {
+    abortRef.current?.abort();
+  };
+
+  // Closing is blocked mid-export; cancel first
+  const handleClose = () => {
+    if (!isExporting) onClose();
+  };
+
+  const gifSize = gifDimensions(dimensions.width, dimensions.height);
+  const bitrateFor = (quality: ExportQuality) => videoBitrate(quality, dimensions.width, dimensions.height, settings.fps);
+  // Video bitrate is a target, so the real file is usually a little smaller
+  const estimatedSize = Math.max(1, Math.round(((totalDuration / 1000) * bitrateFor(settings.quality)) / 8 / 1_000_000));
 
   if (!isOpen) return null;
 
@@ -201,7 +203,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
         role="dialog"
         aria-modal="true"
         aria-labelledby="export-modal-title"
@@ -223,11 +225,11 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               <div>
                 <h2 id="export-modal-title" className="text-base font-semibold text-foreground">Export Video</h2>
                 <p className="text-xs text-muted-foreground">
-                  {project.scenes.length} scenes &middot; {(totalDuration / 1000).toFixed(1)}s
+                  {sceneCount} scenes &middot; {(totalDuration / 1000).toFixed(1)}s
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0" aria-label="Close export modal">
+            <Button variant="ghost" size="sm" onClick={handleClose} disabled={isExporting} className="h-8 w-8 p-0" aria-label="Close export modal">
               <X className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
@@ -334,7 +336,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                     )}
                   >
                     <span className="text-xs font-medium">{option.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{option.desc}</span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      ~{Math.round(bitrateFor(option.value) / 1_000_000)} Mbps
+                    </span>
                   </button>
                 ))}
               </div>
@@ -461,9 +465,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                     <div className="flex items-center justify-between">
                       <Label className="text-xs text-muted-foreground">Include Audio</Label>
                       <Switch
-                        checked={settings.includeAudio}
+                        checked={settings.includeAudio && hasAudio && settings.format !== 'gif'}
                         onCheckedChange={(v) => handleSettingChange('includeAudio', v)}
-                        disabled={settings.format === 'gif'}
+                        disabled={settings.format === 'gif' || !hasAudio}
                       />
                     </div>
                   </div>
@@ -477,10 +481,11 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                 <Zap className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-xs font-medium text-foreground">
-                    {settings.format === 'gif' ? `${Math.min(dimensions.width, 800)} x ${Math.round(Math.min(dimensions.width, 800) * (dimensions.height / dimensions.width))}` : `${dimensions.width} x ${dimensions.height}`}
+                    {settings.format === 'gif' ? `${gifSize.width} x ${gifSize.height}` : `${dimensions.width} x ${dimensions.height}`}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {settings.format === 'gif' ? `${Math.min(settings.fps, 15)} FPS` : `${settings.fps} FPS`} &middot; ~{settings.format === 'gif' ? Math.round(estimatedSize * 0.5) : estimatedSize} MB estimated
+                    {settings.format === 'gif' ? `${Math.min(settings.fps, GIF_FPS)} FPS` : `${settings.fps} FPS`}
+                    {settings.format !== 'gif' && <> &middot; ~{estimatedSize} MB estimated</>}
                   </p>
                 </div>
               </div>
@@ -501,19 +506,19 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             {/* Format Note */}
             {settings.format === 'gif' && (
               <p className="text-[10px] text-muted-foreground">
-                GIFs are optimized for smaller file sizes (max 800px wide, 15 FPS).
+                GIFs are optimized for smaller file sizes (max 800px wide, {GIF_FPS} FPS, no audio).
               </p>
             )}
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border bg-muted/30">
-            <Button variant="outline" onClick={onClose} disabled={isExporting}>
+            <Button variant="outline" onClick={isExporting ? handleCancelExport : onClose}>
               Cancel
             </Button>
             <Button
               onClick={handleExport}
-              disabled={isExporting || project.scenes.length === 0}
+              disabled={isExporting || sceneCount === 0}
               className="min-w-[120px]"
             >
               {isExporting ? (

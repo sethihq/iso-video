@@ -32,7 +32,7 @@ export interface CropRegion {
 
 export interface CapturedPage {
   url: string;
-  fullPageImage: string;
+  fullPageImage?: string;       // No longer sent by /api/capture
   thumbnail: string;
   width: number;
   height: number;

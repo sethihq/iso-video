@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Globe,
   Check,
@@ -14,16 +15,38 @@ import { Input } from '@/components/ui/input';
 import { CustomSlider } from '@/components/ui/custom-slider';
 import { useEditorStore } from '@/lib/store';
 import { VIDEO_STYLE_PRESETS } from '@/lib/presets';
-import { DetectedSection } from '@/lib/types';
+import { CapturedPage, DetectedSection } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import type { CapturePhase, CaptureSummary } from '@/lib/capture/events';
+import { CaptureFailure, isCaptureStream, readCaptureEvents, readErrorMessage } from '@/lib/capture/client';
 
-// Capture phases with timing
-const CAPTURE_PHASES = [
-  { id: 'connect', label: 'Connecting to site', duration: 1500 },
-  { id: 'capture', label: 'Capturing full page', duration: 3000 },
-  { id: 'analyze', label: 'Analyzing layout', duration: 2000 },
-  { id: 'detect', label: 'Detecting sections', duration: 2500 },
+// Capture phases, in the order the server reports them
+const CAPTURE_PHASES: { id: CapturePhase; label: string }[] = [
+  { id: 'connect', label: 'Connecting to site' },
+  { id: 'capture', label: 'Capturing full page' },
+  { id: 'analyze', label: 'Analyzing layout' },
+  { id: 'detect', label: 'Detecting sections' },
 ];
+
+// Give up on a capture when the server sends nothing for this long
+const CAPTURE_STALL_MS = 90_000;
+
+// The capture in flight. Bumping `id` turns anything an older capture still reports into a no-op.
+interface CaptureHandle {
+  id: number;
+  controller: AbortController | null;
+  stallTimer?: ReturnType<typeof setTimeout>;
+  finishTimer?: ReturnType<typeof setTimeout>;
+}
+
+// Aborts the request and clears its timers
+function stopCapture(capture: CaptureHandle) {
+  capture.id += 1;
+  capture.controller?.abort();
+  capture.controller = null;
+  clearTimeout(capture.stallTimer);
+  clearTimeout(capture.finishTimer);
+}
 
 // Shimmer skeleton with gradient
 function ShimmerSkeleton({ className }: { className?: string }) {
@@ -167,6 +190,7 @@ export function UrlPanel() {
   const [captureProgress, setCaptureProgress] = useState(0);
   const [scanLinePosition, setScanLinePosition] = useState(0);
   const [detectedCount, setDetectedCount] = useState(0);
+  const captureRef = useRef<CaptureHandle>({ id: 0, controller: null });
 
   const {
     capturedPage,
@@ -174,6 +198,8 @@ export function UrlPanel() {
     selectedStyleId,
     baseDuration,
     isManualMode,
+    scenes,
+    screens,
     setCapturedPage,
     toggleSectionSelection,
     selectAllSections,
@@ -183,8 +209,26 @@ export function UrlPanel() {
     generateVideoFromSections,
     setManualMode,
     addManualScreens,
-    project,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((s) => ({
+      capturedPage: s.capturedPage,
+      selectedSectionIds: s.selectedSectionIds,
+      selectedStyleId: s.selectedStyleId,
+      baseDuration: s.baseDuration,
+      isManualMode: s.isManualMode,
+      scenes: s.project.scenes,
+      screens: s.project.screens,
+      setCapturedPage: s.setCapturedPage,
+      toggleSectionSelection: s.toggleSectionSelection,
+      selectAllSections: s.selectAllSections,
+      deselectAllSections: s.deselectAllSections,
+      setSelectedStyle: s.setSelectedStyle,
+      setBaseDuration: s.setBaseDuration,
+      generateVideoFromSections: s.generateVideoFromSections,
+      setManualMode: s.setManualMode,
+      addManualScreens: s.addManualScreens,
+    }))
+  );
 
   // Animate scan line during capture
   useEffect(() => {
@@ -197,16 +241,27 @@ export function UrlPanel() {
     return () => clearInterval(interval);
   }, [step]);
 
-  // Simulate detected sections during capture
+  // Abort a capture that is still running when the panel unmounts
   useEffect(() => {
-    if (step !== 'capturing' || capturePhase < 2) return;
+    const capture = captureRef.current;
+    return () => stopCapture(capture);
+  }, []);
 
-    const timeout = setTimeout(() => {
-      setDetectedCount((prev) => Math.min(prev + 1, 5));
-    }, 800);
+  // A file dropped outside the upload area would make the browser open it and leave the editor
+  useEffect(() => {
+    const blockFileDrop = (e: DragEvent) => {
+      if (e.defaultPrevented || !e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      if (e.type === 'dragover') e.dataTransfer.dropEffect = 'none';
+    };
 
-    return () => clearTimeout(timeout);
-  }, [step, capturePhase, detectedCount]);
+    window.addEventListener('dragover', blockFileDrop);
+    window.addEventListener('drop', blockFileDrop);
+    return () => {
+      window.removeEventListener('dragover', blockFileDrop);
+      window.removeEventListener('drop', blockFileDrop);
+    };
+  }, []);
 
   const handleCapture = async () => {
     if (!url.trim()) return;
@@ -217,31 +272,31 @@ export function UrlPanel() {
       return;
     }
 
+    const capture = captureRef.current;
+    stopCapture(capture);
+    const captureId = capture.id;
+    const isCurrent = () => capture.id === captureId;
+    const controller = new AbortController();
+    capture.controller = controller;
+
+    // Restarted on every event, so only a silent server times out
+    let stalled = false;
+    const watchForStall = () => {
+      clearTimeout(capture.stallTimer);
+      capture.stallTimer = setTimeout(() => {
+        stalled = true;
+        controller.abort();
+      }, CAPTURE_STALL_MS);
+    };
+
     setStep('capturing');
     setCapturePhase(0);
     setCaptureProgress(0);
     setDetectedCount(0);
     setError(null);
-
-    // Animate through phases
-    let phase = 0;
-    const phaseInterval = setInterval(() => {
-      phase++;
-      if (phase < CAPTURE_PHASES.length) {
-        setCapturePhase(phase);
-      }
-    }, 2000);
-
-    // Animate progress
-    const progressInterval = setInterval(() => {
-      setCaptureProgress((prev) => Math.min(prev + 1, 95));
-    }, 100);
+    watchForStall();
 
     try {
-      // Add timeout for large pages
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-
       const response = await fetch('/api/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -249,45 +304,73 @@ export function UrlPanel() {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-      clearInterval(phaseInterval);
-      clearInterval(progressInterval);
-
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Capture failed');
+        throw new CaptureFailure(await readErrorMessage(response, 'Failed to capture website'));
+      }
+      if (!response.body || !isCaptureStream(response)) {
+        throw new CaptureFailure('Failed to capture website');
       }
 
-      const data = await response.json();
+      // Sections stream in one by one, then the page metadata
+      const sections: DetectedSection[] = [];
+      let summary: CaptureSummary | null = null;
+      for await (const event of readCaptureEvents(response.body)) {
+        if (!isCurrent()) return;
+        watchForStall();
+
+        if (event.type === 'progress') {
+          const phase = CAPTURE_PHASES.findIndex((p) => p.id === event.phase);
+          setCapturePhase((prev) => Math.max(prev, phase));
+          setCaptureProgress((prev) => Math.max(prev, event.progress));
+        } else if (event.type === 'section') {
+          sections[event.index] = event.section;
+          setDetectedCount((count) => count + 1);
+        } else if (event.type === 'done') {
+          summary = event.page;
+        } else {
+          throw new CaptureFailure(event.message);
+        }
+      }
+
+      if (!isCurrent()) return;
+      if (!summary) {
+        throw new CaptureFailure('Capture ended unexpectedly. Please try again.');
+      }
+      clearTimeout(capture.stallTimer);
+      capture.controller = null;
+
+      const page: CapturedPage = { ...summary, sections: sections.filter(Boolean) };
 
       // Complete the progress animation
       setCaptureProgress(100);
       setCapturePhase(CAPTURE_PHASES.length - 1);
-      setDetectedCount(data.sections.length);
+      setDetectedCount(page.sections.length);
 
-      // Small delay for completion animation
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Small delay for completion animation; Cancel clears it
+      capture.finishTimer = setTimeout(() => {
+        if (!isCurrent()) return;
+        setCapturedPage(page);
 
-      setCapturedPage(data);
+        // Auto-select all sections except footer
+        const nonFooterIds = page.sections
+          .filter((s) => s.type !== 'footer')
+          .map((s) => s.id);
 
-      // Auto-select all sections except footer
-      const nonFooterIds = data.sections
-        .filter((s: DetectedSection) => s.type !== 'footer')
-        .map((s: DetectedSection) => s.id);
-
-      useEditorStore.setState({ selectedSectionIds: nonFooterIds });
-      setStep('sections');
+        useEditorStore.setState({ selectedSectionIds: nonFooterIds });
+        setStep('sections');
+      }, 500);
     } catch (err) {
-      clearInterval(phaseInterval);
-      clearInterval(progressInterval);
+      if (!isCurrent()) return;
+      clearTimeout(capture.stallTimer);
+      capture.controller = null;
 
       let errorMessage = 'Failed to capture website';
-      if (err instanceof Error) {
-        if (err.name === 'AbortError') {
-          errorMessage = 'Capture timed out. The page may be too large or slow to load.';
-        } else {
-          errorMessage = err.message;
-        }
+      if (stalled) {
+        errorMessage = 'Capture timed out. The page may be too large or slow to load.';
+      } else if (err instanceof CaptureFailure) {
+        errorMessage = err.message;
+      } else {
+        console.error('Capture failed:', err);
       }
 
       setError(errorMessage);
@@ -302,6 +385,7 @@ export function UrlPanel() {
   };
 
   const handleReset = () => {
+    stopCapture(captureRef.current);
     setCapturedPage(null);
     useEditorStore.setState({ selectedSectionIds: [] });
     setStep('url');
@@ -312,8 +396,8 @@ export function UrlPanel() {
     setDetectedCount(0);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  // Shared by the file picker and drag and drop
+  const uploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
@@ -323,8 +407,28 @@ export function UrlPanel() {
     }
 
     setError(null);
-    await addManualScreens(imageFiles);
-    setStep('ready');
+    try {
+      await addManualScreens(imageFiles);
+      setStep('ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to read these images');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    void uploadFiles(e.target.files);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    void uploadFiles(e.dataTransfer.files);
   };
 
   return (
@@ -416,6 +520,8 @@ export function UrlPanel() {
                   <div className="space-y-2">
                     <label
                       htmlFor="screenshot-upload"
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
                       className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
                     >
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -729,12 +835,12 @@ export function UrlPanel() {
                   </motion.div>
                 </motion.div>
                 <h3 className="text-sm font-semibold text-foreground">Video Generated</h3>
-                <p className="text-xs text-muted-foreground mt-1">{project.scenes.length} scenes ready to preview</p>
+                <p className="text-xs text-muted-foreground mt-1">{scenes.length} scenes ready to preview</p>
               </div>
 
               <div className="space-y-2">
-                {project.scenes.slice(0, 5).map((scene, i) => {
-                  const screen = project.screens.find((s) => s.id === scene.screenId);
+                {scenes.slice(0, 5).map((scene, i) => {
+                  const screen = screens.find((s) => s.id === scene.screenId);
                   return (
                     <motion.div
                       key={scene.id}
@@ -757,9 +863,9 @@ export function UrlPanel() {
                     </motion.div>
                   );
                 })}
-                {project.scenes.length > 5 && (
+                {scenes.length > 5 && (
                   <div className="text-xs text-center text-muted-foreground py-1">
-                    +{project.scenes.length - 5} more scenes
+                    +{scenes.length - 5} more scenes
                   </div>
                 )}
               </div>

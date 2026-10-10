@@ -1,22 +1,33 @@
 'use client';
 
 import { useRef, useCallback, useEffect, useState } from 'react';
+import { usePlaybackStore } from '@/lib/playback';
 
 interface TimelinePlayheadProps {
-  currentTime: number;
   totalDuration: number;
   onSeek: (time: number) => void;
 }
 
 export function TimelinePlayhead({
-  currentTime,
   totalDuration,
   onSeek,
 }: TimelinePlayheadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
 
-  const position = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
+  // Moves with the clock through a store subscription instead of re-rendering every frame
+  useEffect(() => {
+    const place = (time: number) => {
+      if (!headRef.current) return;
+      const position = totalDuration > 0 ? (time / totalDuration) * 100 : 0;
+      headRef.current.style.left = `${position}%`;
+    };
+    place(usePlaybackStore.getState().currentTime);
+    return usePlaybackStore.subscribe((state, prev) => {
+      if (state.currentTime !== prev.currentTime) place(state.currentTime);
+    });
+  }, [totalDuration]);
 
   const handleSeekFromEvent = useCallback(
     (clientX: number) => {
@@ -68,8 +79,8 @@ export function TimelinePlayhead({
     >
       {/* Playhead */}
       <div
+        ref={headRef}
         className="absolute top-0 bottom-0 pointer-events-auto cursor-ew-resize"
-        style={{ left: `${position}%` }}
         onMouseDown={handleMouseDown}
       >
         {/* Hit area for easier grabbing */}

@@ -9,39 +9,40 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePlaybackStore } from '@/lib/playback';
 import { cn } from '@/lib/utils';
 
 interface TimelineToolbarProps {
-  isPlaying: boolean;
-  currentTime: number;
   totalDuration: number;
   zoom: number;
   sceneCount: number;
-  onPlay: () => void;
-  onPause: () => void;
-  onStop: () => void;
   onZoomChange: (zoom: number) => void;
   onExport?: () => void;
 }
 
+const formatTime = (ms: number) => {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
+// Re-renders once per second of playback, not every frame
+function CurrentTime() {
+  const seconds = usePlaybackStore((s) => Math.floor(s.currentTime / 1000));
+  return <>{formatTime(seconds * 1000)}</>;
+}
+
 export function TimelineToolbar({
-  isPlaying,
-  currentTime,
   totalDuration,
   zoom,
   sceneCount,
-  onPlay,
-  onPause,
-  onStop,
   onZoomChange,
   onExport,
 }: TimelineToolbarProps) {
-  const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+  const isPlaying = usePlaybackStore((s) => s.isPlaying);
+  const toggle = usePlaybackStore((s) => s.toggle);
+  const stop = usePlaybackStore((s) => s.stop);
 
   return (
     <div className="flex items-center justify-between h-10 border-b border-border px-3 shrink-0 bg-card">
@@ -50,7 +51,7 @@ export function TimelineToolbar({
         <Button
           variant="ghost"
           size="sm"
-          onClick={onStop}
+          onClick={stop}
           className="h-8 w-8 p-0"
           aria-label="Go to start"
         >
@@ -60,7 +61,7 @@ export function TimelineToolbar({
         <Button
           variant="ghost"
           size="sm"
-          onClick={isPlaying ? onPause : onPlay}
+          onClick={toggle}
           className={cn('h-8 w-8 p-0', isPlaying && 'text-primary')}
           aria-label={isPlaying ? 'Pause' : 'Play'}
         >
@@ -71,8 +72,8 @@ export function TimelineToolbar({
           )}
         </Button>
 
-        <div className="ml-2 text-xs text-muted-foreground font-mono">
-          {formatTime(currentTime)} / {formatTime(totalDuration)}
+        <div className="ml-2 text-xs text-muted-foreground font-mono tabular-nums">
+          <CurrentTime /> / {formatTime(totalDuration)}
         </div>
       </div>
 

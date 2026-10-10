@@ -17,8 +17,9 @@ import {
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { Film } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore, useTotalDuration } from '@/lib/store';
-import { usePlayback } from '@/hooks/use-playback';
+import { usePlaybackStore } from '@/lib/playback';
 import { TimelineToolbar } from './timeline-toolbar';
 import { TimelineRuler } from './timeline-ruler';
 import { TimelineTrack } from './timeline-track';
@@ -27,24 +28,30 @@ import { ExportModal } from '../export-modal';
 
 export function Timeline() {
   const [zoom, setZoom] = useState(1);
-  const [showExportModal, setShowExportModal] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
 
   const {
-    project,
-    isPlaying,
-    currentTime,
+    scenes,
+    screens,
     selectedSceneId,
-    play,
-    pause,
-    stop,
-    seek,
+    isExportOpen,
+    setExportOpen,
     selectScene,
     removeScene,
     reorderScenes,
-  } = useEditorStore();
-
-  usePlayback();
+  } = useEditorStore(
+    useShallow((s) => ({
+      scenes: s.project.scenes,
+      screens: s.project.screens,
+      selectedSceneId: s.selectedSceneId,
+      isExportOpen: s.isExportOpen,
+      setExportOpen: s.setExportOpen,
+      selectScene: s.selectScene,
+      removeScene: s.removeScene,
+      reorderScenes: s.reorderScenes,
+    }))
+  );
+  const seek = usePlaybackStore((s) => s.seek);
 
   const totalDuration = useTotalDuration();
 
@@ -60,9 +67,9 @@ export function Timeline() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIndex = project.scenes.findIndex((s) => s.id === active.id);
-      const newIndex = project.scenes.findIndex((s) => s.id === over.id);
-      const newScenes = arrayMove(project.scenes, oldIndex, newIndex);
+      const oldIndex = scenes.findIndex((s) => s.id === active.id);
+      const newIndex = scenes.findIndex((s) => s.id === over.id);
+      const newScenes = arrayMove(scenes, oldIndex, newIndex);
       reorderScenes(newScenes);
     }
   };
@@ -80,7 +87,7 @@ export function Timeline() {
   }, [totalDuration, handleSeek]);
 
   // Empty state
-  if (project.scenes.length === 0) {
+  if (scenes.length === 0) {
     return (
       <div className="flex h-28 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
         <div className="flex items-center gap-3 text-muted-foreground">
@@ -102,22 +109,17 @@ export function Timeline() {
     <div className="flex h-28 flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden select-none">
       {/* Toolbar */}
       <TimelineToolbar
-        isPlaying={isPlaying}
-        currentTime={currentTime}
         totalDuration={totalDuration}
         zoom={zoom}
-        onPlay={play}
-        onPause={pause}
-        onStop={stop}
         onZoomChange={setZoom}
-        sceneCount={project.scenes.length}
-        onExport={() => setShowExportModal(true)}
+        sceneCount={scenes.length}
+        onExport={() => setExportOpen(true)}
       />
 
       {/* Export Modal */}
       <ExportModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
+        isOpen={isExportOpen}
+        onClose={() => setExportOpen(false)}
       />
 
       {/* Timeline Content */}
@@ -142,16 +144,14 @@ export function Timeline() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={project.scenes.map((s) => s.id)}
+              items={scenes.map((s) => s.id)}
               strategy={horizontalListSortingStrategy}
             >
               <TimelineTrack
-                scenes={project.scenes}
-                screens={project.screens}
+                scenes={scenes}
+                screens={screens}
                 selectedSceneId={selectedSceneId}
-                currentTime={currentTime}
                 totalDuration={totalDuration}
-                isPlaying={isPlaying}
                 onSelectScene={selectScene}
                 onRemoveScene={removeScene}
               />
@@ -160,7 +160,6 @@ export function Timeline() {
 
           {/* Playhead */}
           <TimelinePlayhead
-            currentTime={currentTime}
             totalDuration={totalDuration}
             onSeek={handleSeek}
           />

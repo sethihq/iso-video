@@ -5,10 +5,11 @@ Transform website screenshots into stunning isometric videos with cinematic 3D e
 ## Features
 
 - **Website Capture**: Enter any URL to capture full-page screenshots with automatic section detection
-- **Isometric 3D Preview**: Real-time preview with customizable rotation, scale, and perspective
+- **Isometric 3D Preview**: WebGL preview with real perspective, framed at the export's aspect ratio, so what you see is exactly what exports
 - **Timeline Editor**: Drag-and-drop scene reordering with playback controls
-- **Multiple Presets**: Product Hunt, Dynamic, Social, and custom styles
-- **Video Export**: High-quality MP4 export with smooth transitions
+- **Multiple Presets**: Product Hunt, Dynamic, Minimal and Social styles, with entry and exit animations and camera moves
+- **Video Export**: MP4 (H.264 + AAC), WebM (VP9 + Opus) and GIF, encoded with WebCodecs faster than real time, with your background music mixed in
+- **Saved Projects**: The current video is kept in the browser (IndexedDB) and survives a reload
 - **Dark/Light Theme**: System-aware theme with manual toggle
 
 ## Getting Started
@@ -57,19 +58,21 @@ npm start
 
 - **Framework**: Next.js 16 with App Router
 - **Styling**: Tailwind CSS v4
-- **State Management**: Zustand
+- **State Management**: Zustand, with the React Compiler for memoization
 - **Drag & Drop**: dnd-kit
+- **Rendering**: one WebGL2 renderer (`lib/render`) shared by the preview and every export
 - **Screenshots**: puppeteer-core with @sparticuz/chromium-min on Vercel
-- **Video Export**: MediaRecorder (WebM), FFmpeg.wasm (MP4), gif.js (GIF)
+- **Video Export**: WebCodecs through Mediabunny (MP4, WebM), gifenc (GIF)
 
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Space` | Play/Pause |
-| `R` | Reset to start |
-| `Left Arrow` | Previous scene |
-| `Right Arrow` | Next scene |
+| `Space` or `K` | Play/Pause |
+| `Left Arrow` / `Right Arrow` | Seek 0.5s (2s with `Shift`) |
+| `Home` / `End` | Go to start / end |
+| `J` / `L` | Previous / next scene |
+| `0`-`9` | Jump to 0-90% |
 | `E` | Export video |
 | `?` | Show shortcuts |
 
