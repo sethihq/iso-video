@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer-core';
 import sharp from 'sharp';
 
 // Chromium binary URL for serverless (must match chromium-min version)
-const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar';
+const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v153.0.0/chromium-v153.0.0-pack.x64.tar';
 
 // Get browser executable path based on environment
 const getBrowser = async () => {

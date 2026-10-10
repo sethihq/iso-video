@@ -15,8 +15,9 @@ Transform website screenshots into stunning isometric videos with cinematic 3D e
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+ (Vercel runs 24.x)
 - npm or yarn
+- Google Chrome (local captures drive the installed browser)
 
 ### Installation
 
@@ -54,12 +55,12 @@ npm start
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 with App Router
-- **Styling**: Tailwind CSS
+- **Framework**: Next.js 16 with App Router
+- **Styling**: Tailwind CSS v4
 - **State Management**: Zustand
 - **Drag & Drop**: dnd-kit
-- **Screenshots**: Puppeteer
-- **Video Export**: WebCodecs API
+- **Screenshots**: puppeteer-core with @sparticuz/chromium-min on Vercel
+- **Video Export**: MediaRecorder (WebM), FFmpeg.wasm (MP4), gif.js (GIF)
 
 ## Keyboard Shortcuts
 
