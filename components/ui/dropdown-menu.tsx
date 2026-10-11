@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { motion, type Variants, AnimatePresence } from 'framer-motion';
 import { Slot } from '@radix-ui/react-slot';
-import { ChevronDown } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Animation variants
@@ -128,12 +128,11 @@ export function DropdownMenuTrigger({
   return (
     <Comp
       className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2',
-        'text-sm font-medium text-foreground',
-        'transition-all duration-200 ease-out',
-        'hover:bg-muted hover:border-border',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'active:scale-[0.98]',
+        // A gray well that turns white while its menu is open
+        'squircle flex h-8 w-full items-center justify-between gap-2 rounded-[10px] bg-well px-2.5 text-left',
+        'text-[13px] text-foreground transition-colors duration-100',
+        'hover:bg-well-hover aria-expanded:bg-white aria-expanded:shadow-[0_0_0_1px_rgba(0,0,0,0.06)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
         className
       )}
       onClick={() => setIsOpen((prev) => !prev)}
@@ -145,7 +144,7 @@ export function DropdownMenuTrigger({
       {showChevron && (
         <ChevronDown
           className={cn(
-            'h-4 w-4 text-muted-foreground transition-transform duration-300 ease-out',
+            'size-3.5 text-faint transition-transform duration-200 ease-snappy',
             isOpen && 'rotate-180'
           )}
           aria-hidden="true"
@@ -175,9 +174,9 @@ export function DropdownMenuContent({
         <motion.ul
           role="menu"
           className={cn(
-            'absolute z-50 mt-2 min-w-[180px] w-full',
-            'flex flex-col gap-1 rounded-lg border border-border bg-card p-1.5',
-            'shadow-lg shadow-black/10',
+            'squircle absolute z-50 mt-1.5 min-w-[180px] w-full',
+            'flex flex-col rounded-[16px] bg-popover p-1 text-[13px]',
+            'shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_18px_40px_-14px_rgba(0,0,0,0.28)]',
             align === 'start' && 'left-0',
             align === 'center' && 'left-1/2 -translate-x-1/2',
             align === 'end' && 'right-0',
@@ -224,19 +223,20 @@ export function DropdownMenuItem({
       <Comp
         role="menuitem"
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm',
-          'text-muted-foreground transition-colors',
-          'hover:bg-muted hover:text-foreground',
-          'focus-visible:outline-none focus-visible:bg-muted focus-visible:text-foreground',
+          'squircle flex h-8 w-full items-center gap-2 rounded-[11px] pl-2 pr-3 text-left text-[13px]',
+          'text-foreground transition-colors duration-100',
+          'hover:bg-well focus-visible:outline-none focus-visible:bg-well',
           'select-none cursor-pointer',
-          selected && 'bg-primary/10 text-foreground',
           className
         )}
         onClick={handleClick}
         aria-current={selected ? 'true' : undefined}
         {...props}
       >
-        {icon && <span className="flex-shrink-0" aria-hidden="true">{icon}</span>}
+        {/* The chosen option carries an amber check */}
+        <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+          {selected ? <Check className="size-3.5 text-primary-press" strokeWidth={2.5} /> : icon}
+        </span>
         {children}
       </Comp>
     </motion.li>
@@ -254,7 +254,7 @@ export function DropdownMenuLabel({ children, className }: DropdownMenuLabelProp
     <motion.li variants={itemVariants}>
       <span
         className={cn(
-          'block px-2.5 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider',
+          'block px-2 py-1.5 text-[11px] font-medium text-faint',
           className
         )}
       >

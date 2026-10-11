@@ -17,7 +17,6 @@ import {
   createLucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
@@ -36,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { useEditorStore, useTotalDuration } from '@/lib/store';
 import { usePlaybackStore } from '@/lib/playback';
 import { GIF_FPS, gifDimensions, outputDimensions, videoBitrate } from '@/lib/export-settings';
+import { FieldLabel, IconButton, SectionTitle, Segmented } from './ui';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -202,82 +202,77 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
         onClick={handleClose}
         role="dialog"
         aria-modal="true"
         aria-labelledby="export-modal-title"
       >
+        {/* No overflow clip here, so the close button's tooltip can spill past the corner */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.2 }}
-          className="relative w-full max-w-lg mx-4 bg-card rounded-xl border border-border shadow-2xl overflow-hidden"
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="squircle relative mx-4 w-full max-w-lg rounded-[22px] bg-card shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_24px_60px_-20px_rgba(0,0,0,0.35)]"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center justify-between gap-3 px-5 pt-5">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Download className="h-4.5 w-4.5 text-primary" aria-hidden="true" />
+              <div className="squircle grid size-9 shrink-0 place-items-center rounded-[12px] bg-white">
+                <Download className="size-4 text-primary-press" aria-hidden="true" />
               </div>
               <div>
-                <h2 id="export-modal-title" className="text-base font-semibold text-foreground">Export Video</h2>
-                <p className="text-xs text-muted-foreground">
+                <h2 id="export-modal-title" className="text-[15px] font-semibold text-foreground">Export Video</h2>
+                <p className="text-[12px] tabular-nums text-muted-foreground">
                   {sceneCount} scenes &middot; {(totalDuration / 1000).toFixed(1)}s
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleClose} disabled={isExporting} className="h-8 w-8 p-0" aria-label="Close export modal">
-              <X className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            <IconButton label="Close export modal" size="sm" onClick={handleClose} disabled={isExporting}>
+              <X className="size-4" aria-hidden="true" />
+            </IconButton>
           </div>
 
           {/* Content */}
-          <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          <div className="scroll-slim max-h-[70vh] space-y-5 overflow-y-auto px-5 py-4">
             {/* Quick Presets */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="quick-export-label">
-                Quick Export
-              </Label>
-              <div className="grid grid-cols-2 gap-2" role="group" aria-labelledby="quick-export-label">
+              <SectionTitle>
+                <span id="quick-export-label">Quick Export</span>
+              </SectionTitle>
+              <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="quick-export-label">
                 {EXPORT_PRESETS.map((preset) => {
                   const Icon = PLATFORM_ICONS[preset.platform] || Film;
                   return (
                     <button
                       key={preset.id}
+                      type="button"
                       onClick={() => handlePresetSelect(preset.id)}
                       aria-pressed={activePreset === preset.id}
                       className={cn(
-                        'flex items-center gap-3 p-3 rounded-lg border text-left transition-all',
-                        activePreset === preset.id
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                        'squircle flex min-w-0 items-center gap-2.5 rounded-[14px] p-2 text-left transition-colors duration-100',
+                        activePreset === preset.id ? 'bg-primary-soft' : 'bg-well hover:bg-well-hover'
                       )}
                     >
-                      <div
-                        className={cn(
-                          'w-8 h-8 rounded-md flex items-center justify-center shrink-0',
-                          activePreset === preset.id ? 'bg-primary/10' : 'bg-muted'
-                        )}
-                      >
+                      <div className="squircle grid size-8 shrink-0 place-items-center rounded-[10px] bg-white">
                         <Icon
                           className={cn(
-                            'h-4 w-4',
-                            activePreset === preset.id ? 'text-primary' : 'text-muted-foreground'
+                            'size-4',
+                            activePreset === preset.id ? 'text-primary-press' : 'text-muted-foreground'
                           )}
                           aria-hidden="true"
                         />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{preset.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="truncate text-[13px] font-medium text-foreground">{preset.name}</p>
+                        <p className="text-[11px] tabular-nums text-muted-foreground">
                           {preset.aspectRatio} &middot; {preset.resolution} &middot; {preset.format.toUpperCase()}
                         </p>
                       </div>
                       {activePreset === preset.id && (
-                        <Check className="h-4 w-4 text-primary ml-auto shrink-0" aria-hidden="true" />
+                        <Check className="ml-auto size-4 shrink-0 text-primary-press" strokeWidth={2.5} aria-hidden="true" />
                       )}
                     </button>
                   );
@@ -287,71 +282,56 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
             {/* Format Selection */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="format-label">
-                Format
-              </Label>
-              <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="format-label">
-                {FORMAT_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleSettingChange('format', option.value)}
-                    aria-pressed={settings.format === option.value}
-                    className={cn(
-                      'flex flex-col items-center gap-1.5 p-3 rounded-lg border transition-all',
-                      settings.format === option.value
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    <option.icon
-                      className={cn(
-                        'h-5 w-5',
-                        settings.format === option.value ? 'text-primary' : 'text-muted-foreground'
-                      )}
-                      aria-hidden="true"
-                    />
-                    <span className="text-xs font-medium">{option.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{option.desc}</span>
-                  </button>
-                ))}
-              </div>
+              <SectionTitle>Format</SectionTitle>
+              <Segmented
+                label="Format"
+                value={settings.format}
+                options={FORMAT_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: (
+                    <span className="flex flex-col items-center gap-0.5 leading-4">
+                      <option.icon className="mb-0.5 size-4" aria-hidden="true" />
+                      <span>{option.label}</span>
+                      <span className="text-[11px] font-normal opacity-80">{option.desc}</span>
+                    </span>
+                  ),
+                }))}
+                onChange={(format) => handleSettingChange('format', format)}
+                className="h-[72px]"
+              />
             </div>
 
             {/* Quality */}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block" id="quality-label">
-                Quality
-              </Label>
-              <div className="grid grid-cols-4 gap-2" role="group" aria-labelledby="quality-label">
-                {QUALITY_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleSettingChange('quality', option.value)}
-                    aria-pressed={settings.quality === option.value}
-                    className={cn(
-                      'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all',
-                      settings.quality === option.value
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    <span className="text-xs font-medium">{option.label}</span>
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      ~{Math.round(bitrateFor(option.value) / 1_000_000)} Mbps
+              <SectionTitle>Quality</SectionTitle>
+              <Segmented
+                label="Quality"
+                value={settings.quality}
+                options={QUALITY_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: (
+                    <span className="flex flex-col items-center gap-0.5 leading-4">
+                      <span>{option.label}</span>
+                      <span className="text-[11px] font-normal tabular-nums opacity-80">
+                        ~{Math.round(bitrateFor(option.value) / 1_000_000)} Mbps
+                      </span>
                     </span>
-                  </button>
-                ))}
-              </div>
+                  ),
+                }))}
+                onChange={(quality) => handleSettingChange('quality', quality)}
+                className="h-[52px]"
+              />
             </div>
 
             {/* Advanced Toggle */}
             <button
+              type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="squircle -ml-2 flex h-7 items-center gap-1.5 rounded-[8px] px-2 text-[12px] font-medium text-muted-foreground transition-colors duration-100 hover:bg-black/5 hover:text-foreground"
               aria-expanded={showAdvanced}
               aria-controls="advanced-export-settings"
             >
-              <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+              <Settings2 className="size-3.5" aria-hidden="true" />
               <span>{showAdvanced ? 'Hide' : 'Show'} Advanced Settings</span>
             </button>
 
@@ -359,18 +339,19 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             <AnimatePresence>
               {showAdvanced && (
                 <motion.div
+                  // Clipped only while it grows and shrinks, so the menus inside can open past its edge
                   initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+                  exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
                   className="space-y-4 overflow-hidden"
                   id="advanced-export-settings"
                 >
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3">
                     {/* Resolution */}
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1.5 block">Resolution</Label>
+                      <FieldLabel>Resolution</FieldLabel>
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="h-9 text-xs">
+                        <DropdownMenuTrigger>
                           {settings.resolution === '720p' && '720p (HD)'}
                           {settings.resolution === '1080p' && '1080p (Full HD)'}
                           {settings.resolution === '4k' && '4K (Ultra HD)'}
@@ -400,9 +381,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
                     {/* Aspect Ratio */}
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1.5 block">Aspect Ratio</Label>
+                      <FieldLabel>Aspect Ratio</FieldLabel>
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="h-9 text-xs">
+                        <DropdownMenuTrigger>
                           {settings.aspectRatio === '16:9' && '16:9 (Landscape)'}
                           {settings.aspectRatio === '1:1' && '1:1 (Square)'}
                           {settings.aspectRatio === '9:16' && '9:16 (Portrait)'}
@@ -439,9 +420,9 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
                     {/* FPS */}
                     <div>
-                      <Label className="text-xs text-muted-foreground mb-1.5 block">Frame Rate</Label>
+                      <FieldLabel>Frame Rate</FieldLabel>
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="h-9 text-xs">
+                        <DropdownMenuTrigger className="tabular-nums">
                           {settings.fps} FPS
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
@@ -461,10 +442,11 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                       </DropdownMenu>
                     </div>
 
-                    {/* Include Audio */}
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs text-muted-foreground">Include Audio</Label>
+                    {/* Include Audio, level with the Frame Rate field beside it */}
+                    <div className="flex h-8 items-center justify-between self-end">
+                      <span className="text-[12px] font-medium text-muted-foreground" aria-hidden="true">Include Audio</span>
                       <Switch
+                        aria-label="Include audio"
                         checked={settings.includeAudio && hasAudio && settings.format !== 'gif'}
                         onCheckedChange={(v) => handleSettingChange('includeAudio', v)}
                         disabled={settings.format === 'gif' || !hasAudio}
@@ -476,73 +458,76 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             </AnimatePresence>
 
             {/* Output Info */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
-              <div className="flex items-center gap-3">
-                <Zap className="h-4 w-4 text-muted-foreground" />
+            <div className="squircle flex items-center justify-between gap-3 rounded-[14px] bg-white px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <Zap className="size-4 text-faint" aria-hidden="true" />
                 <div>
-                  <p className="text-xs font-medium text-foreground">
+                  <p className="text-[12px] font-medium tabular-nums text-foreground">
                     {settings.format === 'gif' ? `${gifSize.width} x ${gifSize.height}` : `${dimensions.width} x ${dimensions.height}`}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-[11px] tabular-nums text-muted-foreground">
                     {settings.format === 'gif' ? `${Math.min(settings.fps, GIF_FPS)} FPS` : `${settings.fps} FPS`}
                     {settings.format !== 'gif' && <> &middot; ~{estimatedSize} MB estimated</>}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs font-medium text-foreground uppercase">{settings.format}</p>
-                <p className="text-[10px] text-muted-foreground capitalize">{settings.quality} quality</p>
+                <p className="text-[12px] font-medium uppercase text-foreground">{settings.format}</p>
+                <p className="text-[11px] capitalize text-muted-foreground">{settings.quality} quality</p>
               </div>
             </div>
 
             {/* Error Display */}
             {exportError && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <p className="text-xs">{exportError}</p>
+              <div role="alert" className="squircle flex items-center gap-2 rounded-[12px] bg-destructive/10 px-3 py-2.5 text-destructive-foreground">
+                <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+                <p className="text-[12px]">{exportError}</p>
               </div>
             )}
 
             {/* Format Note */}
             {settings.format === 'gif' && (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 GIFs are optimized for smaller file sizes (max 800px wide, {GIF_FPS} FPS, no audio).
               </p>
             )}
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border bg-muted/30">
-            <Button variant="outline" onClick={isExporting ? handleCancelExport : onClose}>
+          <div className="flex items-center justify-end gap-2 px-5 pt-1 pb-5">
+            {/* Export progress */}
+            {isExporting && (
+              <div className="relative mr-1 h-1.5 flex-1 overflow-hidden rounded-full bg-well">
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${exportProgress}%` }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                />
+              </div>
+            )}
+            <Button variant="ghost" size="lg" onClick={isExporting ? handleCancelExport : onClose}>
               Cancel
             </Button>
             <Button
+              size="lg"
               onClick={handleExport}
               disabled={isExporting || sceneCount === 0}
               className="min-w-[120px]"
             >
               {isExporting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {Math.round(exportProgress)}%
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  <span className="tabular-nums">{Math.round(exportProgress)}%</span>
                 </>
               ) : (
                 <>
-                  <Download className="mr-2 h-4 w-4" />
+                  <Download className="size-4" aria-hidden="true" />
                   Export
                 </>
               )}
             </Button>
           </div>
-
-          {/* Progress Overlay */}
-          {isExporting && (
-            <motion.div
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: exportProgress / 100 }}
-              className="absolute bottom-0 left-0 right-0 h-1 bg-primary origin-left"
-            />
-          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>

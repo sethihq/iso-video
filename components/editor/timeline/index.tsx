@@ -89,12 +89,14 @@ export function Timeline() {
   // Empty state
   if (scenes.length === 0) {
     return (
-      <div className="flex h-28 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex items-center gap-3 text-muted-foreground">
-          <Film className="h-5 w-5" />
+      <div className="squircle flex h-[150px] items-center justify-center rounded-[22px] bg-card">
+        <div className="flex items-center gap-3">
+          <span className="squircle grid size-10 place-items-center rounded-[12px] bg-well text-muted-foreground">
+            <Film className="size-4.5" aria-hidden="true" />
+          </span>
           <div>
-            <p className="text-sm font-medium">No scenes yet</p>
-            <p className="text-xs text-muted-foreground/70">Capture a website to start editing</p>
+            <p className="text-[13px] font-medium">No scenes yet</p>
+            <p className="text-[12px] text-faint">Capture a website to start editing</p>
           </div>
         </div>
       </div>
@@ -106,14 +108,13 @@ export function Timeline() {
   const trackWidth = Math.max(minTrackWidth, totalDuration * zoom * 0.15);
 
   return (
-    <div className="flex h-28 flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden select-none">
+    <div className="squircle flex h-[150px] flex-col rounded-[22px] bg-card select-none">
       {/* Toolbar */}
       <TimelineToolbar
         totalDuration={totalDuration}
         zoom={zoom}
         onZoomChange={setZoom}
         sceneCount={scenes.length}
-        onExport={() => setExportOpen(true)}
       />
 
       {/* Export Modal */}
@@ -123,7 +124,7 @@ export function Timeline() {
       />
 
       {/* Timeline Content */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+      <div className="scroll-slim flex-1 overflow-x-auto overflow-y-hidden px-3 pb-3">
         <div
           ref={trackRef}
           className="relative h-full"

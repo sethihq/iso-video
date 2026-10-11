@@ -17,15 +17,16 @@ import { useEditorStore } from '@/lib/store';
 import { VIDEO_STYLE_PRESETS } from '@/lib/presets';
 import { CapturedPage, DetectedSection } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import type { CapturePhase, CaptureSummary } from '@/lib/capture/events';
+import { CAPTURE_WIDTHS, type CapturePhase, type CaptureSummary, type CaptureWidth } from '@/lib/capture/events';
 import { CaptureFailure, isCaptureStream, readCaptureEvents, readErrorMessage } from '@/lib/capture/client';
+import { SectionTitle, Segmented, TabSwitch } from './ui';
 
 // Capture phases, in the order the server reports them
 const CAPTURE_PHASES: { id: CapturePhase; label: string }[] = [
   { id: 'connect', label: 'Connecting to site' },
-  { id: 'capture', label: 'Capturing full page' },
-  { id: 'analyze', label: 'Analyzing layout' },
-  { id: 'detect', label: 'Detecting sections' },
+  { id: 'capture', label: 'Loading the full page' },
+  { id: 'analyze', label: 'Finding sections' },
+  { id: 'detect', label: 'Taking screenshots' },
 ];
 
 // Give up on a capture when the server sends nothing for this long
@@ -51,9 +52,9 @@ function stopCapture(capture: CaptureHandle) {
 // Shimmer skeleton with gradient
 function ShimmerSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn('relative overflow-hidden rounded bg-muted', className)}>
+    <div className={cn('squircle relative overflow-hidden rounded-[6px] bg-black/[0.06]', className)}>
       <motion.div
-        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/70 to-transparent"
         animate={{ x: ['-100%', '100%'] }}
         transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
       />
@@ -72,24 +73,24 @@ function BrowserMockup({
   detectedSections: number;
 }) {
   return (
-    <div className="relative rounded-lg border border-border bg-card overflow-hidden shadow-lg">
+    <div className="squircle relative overflow-hidden rounded-[16px] bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_12px_32px_-14px_rgba(0,0,0,0.25)]">
       {/* Browser chrome */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border">
-        <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-400/60" />
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/60" />
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400/60" />
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex gap-1" aria-hidden="true">
+          <div className="size-2 rounded-full bg-black/10" />
+          <div className="size-2 rounded-full bg-black/10" />
+          <div className="size-2 rounded-full bg-black/10" />
         </div>
-        <div className="flex-1 flex items-center gap-2 px-2 py-1 rounded bg-background/50 text-[10px] text-muted-foreground">
-          <Globe className="h-3 w-3" />
+        <div className="squircle flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-full bg-well px-2 text-[11px] text-muted-foreground">
+          <Globe className="size-3 shrink-0 text-faint" aria-hidden="true" />
           <span className="truncate">{url}</span>
         </div>
       </div>
 
       {/* Page content area */}
-      <div className="relative h-40 bg-gradient-to-b from-muted/30 to-muted/10 overflow-hidden">
+      <div className="relative h-40 overflow-hidden">
         {/* Stylized page skeleton */}
-        <div className="p-3 space-y-2">
+        <div className="space-y-2 px-3 pt-1 pb-3">
           <ShimmerSkeleton className="h-8 w-3/4" />
           <ShimmerSkeleton className="h-3 w-full" />
           <ShimmerSkeleton className="h-3 w-5/6" />
@@ -103,15 +104,14 @@ function BrowserMockup({
 
         {/* Scanning line effect */}
         <motion.div
-          className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent"
+          className="absolute inset-x-0 h-0.5 bg-primary/60 shadow-[0_0_12px_rgba(245,160,14,0.5)]"
           style={{ top: `${scanProgress}%` }}
           animate={{ opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 1, repeat: Infinity }}
         />
 
-
         {/* Gradient overlay at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white to-transparent" />
       </div>
     </div>
   );
@@ -127,14 +127,15 @@ function CaptureProgress({
   progress: number;
   detectedCount: number;
 }) {
-  const currentPhase = CAPTURE_PHASES[phase] || CAPTURE_PHASES[0];
+  // Once the capture completes, every phase reads as done
+  const finished = progress >= 100;
 
   return (
     <div className="space-y-3">
       {/* Progress bar */}
-      <div className="relative h-1.5 bg-muted rounded-full overflow-hidden">
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-well">
         <motion.div
-          className="absolute inset-y-0 left-0 bg-gradient-to-r from-primary via-primary to-primary/50 rounded-full"
+          className="absolute inset-y-0 left-0 rounded-full bg-primary"
           initial={{ width: '0%' }}
           animate={{ width: `${progress}%` }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
@@ -147,21 +148,46 @@ function CaptureProgress({
         />
       </div>
 
-      {/* Status text */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-foreground font-medium">
-          {currentPhase.label}
-        </span>
-        {detectedCount > 0 && (
-          <motion.span
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="text-xs text-muted-foreground"
-          >
-            {detectedCount} sections found
-          </motion.span>
-        )}
-      </div>
+      {/* Phases: done, current, still to come */}
+      <ol className="space-y-1.5">
+        {CAPTURE_PHASES.map((item, index) => {
+          const done = finished || index < phase;
+          const current = !done && index === phase;
+          return (
+            <li
+              key={item.id}
+              aria-current={current ? 'step' : undefined}
+              className={cn(
+                'flex items-center gap-2 text-[12px]',
+                done ? 'text-muted-foreground' : current ? 'font-medium text-foreground' : 'text-faint'
+              )}
+            >
+              <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+                {done ? (
+                  <Check className="size-3" strokeWidth={3} />
+                ) : (
+                  <span
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      current ? 'animate-pulse bg-primary motion-reduce:animate-none' : 'bg-black/15'
+                    )}
+                  />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {index === phase && detectedCount > 0 && (
+                <motion.span
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="shrink-0 font-normal tabular-nums text-muted-foreground"
+                >
+                  {detectedCount} sections found
+                </motion.span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
@@ -182,8 +208,28 @@ function normalizeUrl(input: string): string {
   return url;
 }
 
+const INPUT_TABS = [
+  { value: 'url', label: <><Globe className="size-3.5" aria-hidden="true" />URL</> },
+  { value: 'upload', label: <><ImagePlus className="size-3.5" aria-hidden="true" />Upload</> },
+] as const;
+
+const WIDTH_OPTIONS = CAPTURE_WIDTHS.map((width) => ({
+  value: width,
+  label: <span className="tabular-nums">{width}</span>,
+}));
+
+const HOW_IT_WORKS = ['Paste a website URL', 'Select which sections to include', 'Export as video'];
+
+// Style tiles sit in the well; the chosen one turns amber, like a segmented pick
+const presetClass = (selected: boolean) =>
+  cn(
+    'squircle flex min-w-0 flex-col items-start gap-0.5 rounded-[12px] px-2.5 py-2 text-left transition-[background-color,color,scale] duration-100 active:scale-[0.98]',
+    selected ? 'bg-primary text-primary-foreground' : 'bg-well text-foreground hover:bg-well-hover'
+  );
+
 export function UrlPanel() {
   const [url, setUrl] = useState('');
+  const [captureWidth, setCaptureWidth] = useState<CaptureWidth>(CAPTURE_WIDTHS[0]);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>('url');
   const [capturePhase, setCapturePhase] = useState(0);
@@ -300,7 +346,7 @@ export function UrlPanel() {
       const response = await fetch('/api/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: normalizedUrl }),
+        body: JSON.stringify({ url: normalizedUrl, viewportWidth: captureWidth }),
         signal: controller.signal,
       });
 
@@ -433,69 +479,28 @@ export function UrlPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
-      {/* Pill Tabs - only show on url step */}
+      {/* Input tabs - only show on url step */}
       {step === 'url' && (
-        <div className="p-2 border-b border-border shrink-0">
-          <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg" role="tablist" aria-label="Input method">
-            <button
-              onClick={() => setManualMode(false)}
-              role="tab"
-              aria-selected={!isManualMode}
-              aria-controls="tabpanel-url"
-              tabIndex={!isManualMode ? 0 : -1}
-              className={cn(
-                'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                isManualMode && 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {!isManualMode && (
-                <motion.div
-                  layoutId="urlPanelActiveTab"
-                  className="absolute inset-0 bg-card rounded-md shadow-sm"
-                  transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
-                />
-              )}
-              <span className={cn('relative flex items-center gap-1.5', !isManualMode && 'text-foreground')}>
-                <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-                URL
-              </span>
-            </button>
-            <button
-              onClick={() => setManualMode(true)}
-              role="tab"
-              aria-selected={isManualMode}
-              aria-controls="tabpanel-upload"
-              tabIndex={isManualMode ? 0 : -1}
-              className={cn(
-                'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                !isManualMode && 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {isManualMode && (
-                <motion.div
-                  layoutId="urlPanelActiveTab"
-                  className="absolute inset-0 bg-card rounded-md shadow-sm"
-                  transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
-                />
-              )}
-              <span className={cn('relative flex items-center gap-1.5', isManualMode && 'text-foreground')}>
-                <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
-                Upload
-              </span>
-            </button>
-          </div>
+        <div className="shrink-0 px-3 pt-3">
+          <TabSwitch
+            label="Input method"
+            value={isManualMode ? 'upload' : 'url'}
+            tabs={INPUT_TABS}
+            onChange={(tab) => setManualMode(tab === 'upload')}
+            idPrefix="input-method"
+          />
         </div>
       )}
 
       {/* Header for capturing/sections/ready steps */}
       {step !== 'url' && (
-        <div className="border-b border-border p-4">
-          <h2 className="text-sm font-medium text-foreground mb-1">
+        <div className="shrink-0 px-3 pt-4 pb-1">
+          <h2 className="text-[14px] font-medium text-foreground">
             {step === 'capturing' && 'Capturing Website'}
             {step === 'sections' && 'Select Sections'}
             {step === 'ready' && 'Video Ready'}
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
             {step === 'capturing' && 'Analyzing page structure...'}
             {step === 'sections' && 'Choose which sections to include'}
             {step === 'ready' && 'Your video is ready to preview and export'}
@@ -504,7 +509,7 @@ export function UrlPanel() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="scroll-slim flex-1 overflow-y-auto">
         <AnimatePresence mode="wait">
           {/* URL Input Step */}
           {step === 'url' && (
@@ -513,106 +518,123 @@ export function UrlPanel() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, y: -10 }}
-              className="p-4 space-y-4"
+              className="p-3"
             >
               {isManualMode ? (
-                <div role="tabpanel" id="tabpanel-upload" aria-label="Upload screenshots">
+                <div
+                  role="tabpanel"
+                  id="input-method-panel-upload"
+                  aria-labelledby="input-method-tab-upload"
+                  className="space-y-5"
+                >
                   <div className="space-y-2">
                     <label
                       htmlFor="screenshot-upload"
                       onDragOver={handleDragOver}
                       onDrop={handleDrop}
-                      className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
+                      className="squircle flex h-32 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-[16px] bg-well text-center outline-2 -outline-offset-4 outline-black/10 outline-dashed transition-[background-color,outline-color] duration-100 hover:bg-well-hover hover:outline-black/20 has-focus-visible:outline-solid has-focus-visible:outline-primary"
                     >
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <ImagePlus className="w-8 h-8 mb-2 text-muted-foreground" aria-hidden="true" />
-                        <p className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1" id="upload-format-hint">PNG, JPG, WebP</p>
-                      </div>
+                      <ImagePlus className="mb-1 size-6 text-faint" aria-hidden="true" />
+                      <p className="text-[13px] text-muted-foreground">
+                        <span className="font-medium text-foreground">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-[12px] text-faint" id="upload-format-hint">PNG, JPG, WebP</p>
                       <input
                         id="screenshot-upload"
                         type="file"
-                        className="hidden"
+                        className="sr-only"
                         accept="image/*"
                         multiple
                         onChange={handleFileUpload}
                         aria-describedby="upload-format-hint"
                       />
                     </label>
-                    {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+                    {error && <p className="text-[12px] text-destructive-foreground" role="alert">{error}</p>}
                   </div>
 
-                  <div className="pt-4 border-t border-border">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Video Style
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 mt-2" role="group" aria-label="Video style options">
+                  <div>
+                    <SectionTitle>Video Style</SectionTitle>
+                    <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Video style options">
                       {VIDEO_STYLE_PRESETS.slice(0, 4).map((preset) => (
                         <button
                           key={preset.id}
+                          type="button"
                           onClick={() => setSelectedStyle(preset.id)}
                           aria-pressed={selectedStyleId === preset.id}
-                          className={cn(
-                            'p-2 rounded-lg border text-left transition-all',
-                            selectedStyleId === preset.id
-                              ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                              : 'border-border hover:border-primary/50'
-                          )}
+                          className={presetClass(selectedStyleId === preset.id)}
                         >
-                          <div className="text-xs font-medium">{preset.name}</div>
+                          <span className="text-[12px] font-medium">{preset.name}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
               ) : (
-                <div role="tabpanel" id="tabpanel-url" aria-label="Enter website URL">
-                  <div className="space-y-2">
+                <div
+                  role="tabpanel"
+                  id="input-method-panel-url"
+                  aria-labelledby="input-method-tab-url"
+                  className="space-y-5"
+                >
+                  <div className="flex flex-col gap-2">
                     <div className="relative">
-                      <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                      {/* The field's well paints over earlier siblings, so the icon sits above it */}
+                      <Globe
+                        className="pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 -translate-y-1/2 text-faint"
+                        aria-hidden="true"
+                      />
                       <Input
                         type="text"
+                        size="lg"
                         placeholder="example.com"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleCapture()}
-                        className="pl-9"
+                        className="pl-6"
                         autoComplete="url"
                         spellCheck={false}
                         aria-label="Website URL"
                       />
                     </div>
-                    {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+                    {error && <p className="text-[12px] text-destructive-foreground" role="alert">{error}</p>}
+
+                    <div className="flex items-center justify-between gap-3">
+                      {/* The radiogroup carries the same name, so this copy is for sighted users only */}
+                      <span className="text-[12px] text-muted-foreground" aria-hidden="true">
+                        Screen width
+                      </span>
+                      <Segmented
+                        label="Screen width"
+                        value={captureWidth}
+                        options={WIDTH_OPTIONS}
+                        onChange={setCaptureWidth}
+                        className="w-32"
+                      />
+                    </div>
+
+                    <Button onClick={handleCapture} disabled={!url.trim()} className="group mt-1 w-full" size="lg">
+                      Capture Website
+                      <ArrowRight
+                        className="size-4 transition-transform duration-150 ease-snappy group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </Button>
                   </div>
 
-                  <Button onClick={handleCapture} disabled={!url.trim()} className="w-full group mt-4" size="lg">
-                    Capture Website
-                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-                  </Button>
-
-                  <div className="pt-4 border-t border-border">
-                    <h3 className="text-xs font-medium text-muted-foreground mb-3">How it works</h3>
-                    <ol className="space-y-2 text-xs text-muted-foreground" aria-label="Steps to create video">
-                      <li className="flex gap-2">
-                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium" aria-hidden="true">
-                          1
-                        </span>
-                        <span>Paste a website URL</span>
-                      </li>
-                      <li className="flex gap-2">
-                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium" aria-hidden="true">
-                          2
-                        </span>
-                        <span>Select which sections to include</span>
-                      </li>
-                      <li className="flex gap-2">
-                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-medium" aria-hidden="true">
-                          3
-                        </span>
-                        <span>Export as video</span>
-                      </li>
+                  <div>
+                    <SectionTitle>How it works</SectionTitle>
+                    <ol className="space-y-2" aria-label="Steps to create video">
+                      {HOW_IT_WORKS.map((text, index) => (
+                        <li key={text} className="flex items-center gap-2.5 text-[12px] text-muted-foreground">
+                          <span
+                            className="grid size-5 shrink-0 place-items-center rounded-full bg-well text-[11px] font-medium tabular-nums text-muted-foreground"
+                            aria-hidden="true"
+                          >
+                            {index + 1}
+                          </span>
+                          <span>{text}</span>
+                        </li>
+                      ))}
                     </ol>
                   </div>
                 </div>
@@ -627,7 +649,7 @@ export function UrlPanel() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="p-4 space-y-4"
+              className="space-y-5 p-3"
             >
               {/* Browser mockup with live preview */}
               <BrowserMockup
@@ -644,7 +666,7 @@ export function UrlPanel() {
               />
 
               {/* Cancel button */}
-              <Button variant="ghost" size="sm" onClick={handleReset} className="w-full text-muted-foreground">
+              <Button variant="ghost" onClick={handleReset} className="w-full">
                 Cancel
               </Button>
             </motion.div>
@@ -657,154 +679,143 @@ export function UrlPanel() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="p-4 space-y-4"
+              className="space-y-5 p-3"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {selectedSectionIds.length} of {capturedPage.sections.length} selected
-                </span>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={selectAllSections} className="h-7 px-2 text-xs">
-                    All
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={deselectAllSections} className="h-7 px-2 text-xs">
-                    None
-                  </Button>
+              <div>
+                <div className="flex h-8 items-center justify-between">
+                  <span className="text-[12px] tabular-nums text-muted-foreground">
+                    {selectedSectionIds.length} of {capturedPage.sections.length} selected
+                  </span>
+                  <div className="flex gap-0.5">
+                    <Button variant="ghost" size="sm" onClick={selectAllSections}>
+                      All
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={deselectAllSections}>
+                      None
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-1 space-y-1">
+                  {capturedPage.sections.map((section, index) => {
+                    const isSelected = selectedSectionIds.includes(section.id);
+                    return (
+                      <motion.button
+                        key={section.id}
+                        type="button"
+                        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                        // The stagger delay lives on the entrance only, so a tap answers at once
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          scale: 1,
+                          transition: { delay: index * 0.05, type: 'spring', stiffness: 300, damping: 25 },
+                        }}
+                        onClick={() => toggleSectionSelection(section.id)}
+                        aria-pressed={isSelected}
+                        whileTap={{ scale: 0.98 }}
+                        className={cn(
+                          'squircle flex w-full items-center gap-2.5 rounded-[14px] p-1.5 text-left transition-colors duration-100',
+                          isSelected ? 'bg-primary-soft' : 'hover:bg-black/[0.04]'
+                        )}
+                      >
+                        <motion.div
+                          className={cn(
+                            'squircle grid size-4 shrink-0 place-items-center rounded-[5px] transition-colors duration-100',
+                            isSelected
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)]'
+                          )}
+                          animate={isSelected ? { scale: [1, 1.2, 1] } : {}}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <AnimatePresence>
+                            {isSelected && (
+                              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                                <Check className="size-3" strokeWidth={3} />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
+
+                        <div className="group/thumb squircle relative aspect-[16/10] w-20 shrink-0 overflow-hidden rounded-[8px] bg-well shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+                          {section.thumbnail ? (
+                            <>
+                              <img
+                                src={section.thumbnail}
+                                alt={section.label}
+                                className="size-full object-cover object-top transition-transform duration-200 ease-snappy group-hover/thumb:scale-105"
+                              />
+                              <div className="absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover/thumb:bg-black/15">
+                                <Scan
+                                  className="size-4 text-white opacity-0 transition-opacity duration-150 group-hover/thumb:opacity-100"
+                                  aria-hidden="true"
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <div className="grid size-full place-items-center text-[11px] text-faint">No preview</div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-[13px] font-medium text-foreground">{section.label}</span>
+                            {/* A tint rather than the well, so the badge still reads on a selected row */}
+                            <span className="shrink-0 rounded-full bg-black/[0.06] px-1.5 text-[11px] text-muted-foreground">
+                              {section.type}
+                            </span>
+                          </div>
+                          <span className="text-[12px] tabular-nums text-faint">{section.bounds.height}px tall</span>
+                        </div>
+                      </motion.button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="space-y-2">
-                {capturedPage.sections.map((section, index) => {
-                  const isSelected = selectedSectionIds.includes(section.id);
-                  return (
-                    <motion.button
-                      key={section.id}
-                      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{
-                        delay: index * 0.05,
-                        type: 'spring',
-                        stiffness: 300,
-                        damping: 25,
-                      }}
-                      onClick={() => toggleSectionSelection(section.id)}
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={cn(
-                        'w-full flex items-start gap-3 p-2 rounded-lg border text-left transition-colors',
-                        isSelected
-                          ? 'border-primary bg-primary/5 shadow-sm shadow-primary/10'
-                          : 'border-border bg-background hover:border-primary/50 hover:bg-accent/50'
-                      )}
-                    >
-                      <motion.div
-                        className={cn(
-                          'shrink-0 w-5 h-5 rounded border flex items-center justify-center mt-0.5 transition-colors',
-                          isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'
-                        )}
-                        animate={isSelected ? { scale: [1, 1.2, 1] } : {}}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <AnimatePresence>
-                          {isSelected && (
-                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                              <Check className="h-3 w-3" />
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </motion.div>
-
-                      <div className="shrink-0 w-16 h-12 rounded overflow-hidden bg-muted group/thumb relative">
-                        {section.thumbnail ? (
-                          <>
-                            <img
-                              src={section.thumbnail}
-                              alt={section.label}
-                              className="w-full h-full object-cover object-top transition-transform group-hover/thumb:scale-110"
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/20 transition-colors flex items-center justify-center">
-                              <Scan className="h-4 w-4 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity" />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
-                            No preview
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground truncate">{section.label}</span>
-                          <span
-                            className={cn(
-                              'shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-                              section.type === 'hero' && 'bg-blue-500/10 text-blue-500',
-                              section.type === 'features' && 'bg-green-500/10 text-green-500',
-                              section.type === 'pricing' && 'bg-amber-500/10 text-amber-500',
-                              section.type === 'testimonials' && 'bg-purple-500/10 text-purple-500',
-                              section.type === 'cta' && 'bg-red-500/10 text-red-500',
-                              section.type === 'footer' && 'bg-gray-500/10 text-gray-500',
-                              section.type === 'content' && 'bg-gray-500/10 text-gray-500'
-                            )}
-                          >
-                            {section.type}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">{section.bounds.height}px tall</span>
-                      </div>
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              <div className="pt-4 border-t border-border">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider" id="video-style-label">
-                  Video Style
-                </label>
-                <div className="grid grid-cols-2 gap-2 mt-2" role="group" aria-labelledby="video-style-label">
+              <div>
+                <SectionTitle>
+                  <span id="video-style-label">Video Style</span>
+                </SectionTitle>
+                <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="video-style-label">
                   {VIDEO_STYLE_PRESETS.map((preset) => (
                     <button
                       key={preset.id}
+                      type="button"
                       onClick={() => setSelectedStyle(preset.id)}
                       aria-pressed={selectedStyleId === preset.id}
-                      className={cn(
-                        'p-2 rounded-lg border text-left transition-all',
-                        selectedStyleId === preset.id
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                          : 'border-border hover:border-primary/50'
-                      )}
+                      className={presetClass(selectedStyleId === preset.id)}
                     >
-                      <div className="text-xs font-medium">{preset.name}</div>
-                      <div className="text-[10px] text-muted-foreground line-clamp-1">{preset.description}</div>
+                      <span className="text-[12px] font-medium">{preset.name}</span>
+                      <span className="line-clamp-1 text-[11px] opacity-80">{preset.description}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-border">
-                <CustomSlider
-                  label="Pacing"
-                  value={baseDuration}
-                  min={2000}
-                  max={5000}
-                  step={250}
-                  valueSubtext={baseDuration < 2500 ? ' Quick' : baseDuration > 3500 ? ' Slow' : ' Normal'}
-                  onChange={setBaseDuration}
-                />
-              </div>
+              <CustomSlider
+                label="Pacing"
+                value={baseDuration}
+                min={2000}
+                max={5000}
+                step={250}
+                valueSubtext={baseDuration < 2500 ? ' Quick' : baseDuration > 3500 ? ' Slow' : ' Normal'}
+                onChange={setBaseDuration}
+              />
 
-              <div className="flex gap-2 pt-4">
-                <motion.div className="flex-1" whileTap={{ scale: 0.97 }}>
-                  <Button variant="outline" onClick={handleReset} className="w-full">
-                    Cancel
-                  </Button>
-                </motion.div>
-                <motion.div className="flex-1" whileTap={{ scale: 0.97 }}>
-                  <Button onClick={handleGenerate} disabled={selectedSectionIds.length === 0} className="w-full">
-                    Create Video
-                  </Button>
-                </motion.div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="lg" onClick={handleReset}>
+                  Cancel
+                </Button>
+                <Button
+                  size="lg"
+                  onClick={handleGenerate}
+                  disabled={selectedSectionIds.length === 0}
+                  className="flex-1"
+                >
+                  Create Video
+                </Button>
               </div>
             </motion.div>
           )}
@@ -817,28 +828,30 @@ export function UrlPanel() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="p-4 space-y-4"
+              className="space-y-5 p-3"
             >
-              <div className="text-center py-6">
+              <div className="flex flex-col items-center py-4 text-center">
                 <motion.div
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-3"
+                  className="mb-3 grid size-12 place-items-center rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
                 >
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, type: 'spring', stiffness: 400 }}
                   >
-                    <Check className="h-6 w-6 text-green-500" />
+                    <Check className="size-6 text-primary-press" strokeWidth={2.5} aria-hidden="true" />
                   </motion.div>
                 </motion.div>
-                <h3 className="text-sm font-semibold text-foreground">Video Generated</h3>
-                <p className="text-xs text-muted-foreground mt-1">{scenes.length} scenes ready to preview</p>
+                <h3 className="text-[14px] font-medium text-foreground">Video Generated</h3>
+                <p className="mt-0.5 text-[12px] tabular-nums text-muted-foreground">
+                  {scenes.length} scenes ready to preview
+                </p>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {scenes.slice(0, 5).map((scene, i) => {
                   const screen = screens.find((s) => s.id === scene.screenId);
                   return (
@@ -847,16 +860,16 @@ export function UrlPanel() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.05 }}
-                      className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 transition-colors"
+                      className="flex items-center gap-2.5 p-1.5"
                     >
-                      <div className="w-12 h-8 rounded overflow-hidden bg-muted shrink-0">
+                      <div className="squircle aspect-[16/10] w-20 shrink-0 overflow-hidden rounded-[8px] bg-well shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
                         {screen?.thumbnail && (
-                          <img src={screen.thumbnail} alt="" className="w-full h-full object-cover object-top" />
+                          <img src={screen.thumbnail} alt="" className="size-full object-cover object-top" />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium truncate">Scene {i + 1}</div>
-                        <div className="text-[10px] text-muted-foreground">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-medium text-foreground">Scene {i + 1}</div>
+                        <div className="text-[12px] tabular-nums text-faint">
                           {(scene.duration / 1000).toFixed(1)}s · {scene.motion.entry}
                         </div>
                       </div>
@@ -864,17 +877,15 @@ export function UrlPanel() {
                   );
                 })}
                 {scenes.length > 5 && (
-                  <div className="text-xs text-center text-muted-foreground py-1">
+                  <div className="py-1 text-center text-[12px] tabular-nums text-faint">
                     +{scenes.length - 5} more scenes
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-2 pt-4 border-t border-border">
-                <Button variant="outline" onClick={handleReset} className="flex-1">
-                  Start New
-                </Button>
-              </div>
+              <Button variant="secondary" size="lg" onClick={handleReset} className="w-full">
+                Start New
+              </Button>
             </motion.div>
           )}
         </AnimatePresence>

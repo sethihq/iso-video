@@ -1,11 +1,20 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import { ThemeProvider } from '@/providers/theme-provider';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
+// Open Runde, a rounded sans by Laurids Kern (SIL Open Font License 1.1),
+// the same face as the VibeCut editor
+const openRunde = localFont({
+  src: [
+    { path: './fonts/OpenRunde-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/OpenRunde-Medium.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/OpenRunde-Semibold.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/OpenRunde-Bold.woff2', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-open-runde',
+  display: 'swap',
 });
 
 const geistMono = Geist_Mono({
@@ -42,7 +51,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+        className={`${openRunde.variable} ${geistMono.variable} font-sans antialiased`}
         suppressHydrationWarning
       >
         <ThemeProvider>{children}</ThemeProvider>

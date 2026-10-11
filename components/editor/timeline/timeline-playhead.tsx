@@ -87,10 +87,10 @@ export function TimelinePlayhead({
         <div className="absolute inset-y-0 -left-2 w-4" />
 
         {/* Playhead line */}
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-primary" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-primary" />
 
-        {/* Top handle */}
-        <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-primary rounded-sm" />
+        {/* Handle: an amber tab with a lit top edge */}
+        <div className="absolute -top-0.5 left-1/2 h-3.5 w-2.5 -translate-x-1/2 rounded-[4px] bg-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_1px_2px_rgba(0,0,0,0.25)]" />
       </div>
     </div>
   );

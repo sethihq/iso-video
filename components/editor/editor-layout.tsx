@@ -4,23 +4,25 @@ import { UrlPanel } from './url-panel';
 import { Canvas } from './canvas';
 import { ControlsPanel } from './controls-panel';
 
+const PANEL = 'squircle min-h-0 overflow-hidden rounded-[22px] bg-card';
+
 export function EditorLayout() {
   return (
-    <div className="flex flex-1 h-full min-h-0 overflow-hidden gap-3">
-      {/* Left Panel - URL & Sections */}
-      <div className="w-[300px] min-w-[260px] max-w-[400px] shrink-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="grid min-h-0 grid-cols-[300px_minmax(0,1fr)_300px] gap-2">
+      {/* Left: capture and sections */}
+      <section aria-label="Capture" className={PANEL}>
         <UrlPanel />
-      </div>
+      </section>
 
-      {/* Center - Canvas (takes all remaining space) */}
-      <div className="flex-1 min-w-[400px] h-full overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      {/* Center: the preview */}
+      <section aria-label="Preview" className={PANEL}>
         <Canvas />
-      </div>
+      </section>
 
-      {/* Right Panel - Controls */}
-      <div className="w-[300px] min-w-[260px] max-w-[400px] shrink-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      {/* Right: scene controls */}
+      <section aria-label="Scene settings" className={PANEL}>
         <ControlsPanel />
-      </div>
+      </section>
     </div>
   );
 }

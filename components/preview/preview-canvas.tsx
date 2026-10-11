@@ -184,13 +184,13 @@ export function PreviewCanvas({ zoom = 1 }: PreviewCanvasProps) {
     <div ref={containerRef} className="absolute inset-0 overflow-auto">
       <div className="flex min-h-full min-w-full items-center justify-center">
         {!hasWebGL2 ? (
-          <p className="text-sm text-muted-foreground">The preview needs WebGL2, which this browser doesn&apos;t provide.</p>
+          <p className="text-[13px] text-muted-foreground">The preview needs WebGL2, which this browser doesn&apos;t provide.</p>
         ) : (
           <canvas
             ref={canvasRef}
             role="img"
             aria-label="Video preview"
-            className="block shrink-0 rounded-md shadow-sm ring-1 ring-border"
+            className="block shrink-0 shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_2px_4px_rgba(0,0,0,0.04),0_24px_60px_-24px_rgba(0,0,0,0.35)]"
           />
         )}
       </div>

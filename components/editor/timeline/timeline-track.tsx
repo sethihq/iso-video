@@ -117,13 +117,15 @@ const TimelineElement = memo(function TimelineElement({
         onSelect(scene.id);
       }}
       className={cn(
-        'group absolute inset-y-0 rounded-md overflow-hidden cursor-pointer border',
-        isSelected ? 'border-primary ring-1 ring-primary' : 'border-border',
-        isDragging && 'shadow-lg'
+        'squircle group absolute inset-y-0 cursor-pointer overflow-hidden rounded-[10px] bg-well transition-shadow duration-100',
+        isSelected
+          ? 'shadow-[0_0_0_2px_var(--primary),0_4px_12px_-6px_rgba(0,0,0,0.3)]'
+          : 'shadow-[0_0_0_1px_rgba(0,0,0,0.06)]',
+        isDragging && 'shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_12px_28px_-12px_rgba(0,0,0,0.4)]'
       )}
     >
       {/* Thumbnail */}
-      <div className="absolute inset-0 bg-muted">
+      <div className="absolute inset-0 bg-well">
         {screen?.thumbnail ? (
           <img
             src={screen.thumbnail}
@@ -134,19 +136,19 @@ const TimelineElement = memo(function TimelineElement({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-[10px] text-muted-foreground">No preview</span>
+            <span className="text-[11px] text-faint">No preview</span>
           </div>
         )}
       </div>
 
       {/* Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
 
       {/* Drag handle */}
       <div
         {...attributes}
         {...listeners}
-        className="absolute top-1 left-1 cursor-grab rounded p-0.5 opacity-0 group-hover:opacity-100 bg-black/50 active:cursor-grabbing"
+        className="absolute top-1 left-1 cursor-grab rounded-[6px] bg-black/45 p-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 active:cursor-grabbing"
         aria-label={`Drag to reorder ${screen?.section || `Scene ${index + 1}`}`}
       >
         <GripVertical className="h-3 w-3 text-white" aria-hidden="true" />
@@ -158,25 +160,25 @@ const TimelineElement = memo(function TimelineElement({
           e.stopPropagation();
           onRemove(scene.id);
         }}
-        className="absolute top-1 right-1 h-5 w-5 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 hover:bg-red-500 text-white rounded"
+        className="absolute top-1 right-1 grid size-5 place-items-center rounded-[6px] bg-black/45 text-white opacity-0 transition-[opacity,background-color] duration-100 group-hover:opacity-100 hover:bg-destructive"
         aria-label={`Remove ${screen?.section || `Scene ${index + 1}`}`}
       >
         <Trash2 className="h-2.5 w-2.5" aria-hidden="true" />
       </button>
 
       {/* Info */}
-      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between gap-1 px-1.5 py-1">
-        <span className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-white">
+      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between gap-1 px-2 py-1.5">
+        <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-white">
           {isPlaying && (
             <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-green-500 animate-pulse"
+              className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary"
               role="status"
               aria-label="Currently playing"
             />
           )}
           <span className="truncate">{screen?.section || `Scene ${index + 1}`}</span>
         </span>
-        <span className="text-[10px] text-white/70">
+        <span className="text-[11px] tabular-nums text-white/75">
           {(scene.duration / 1000).toFixed(1)}s
         </span>
       </div>

@@ -42,7 +42,7 @@ export function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
   };
 
   return (
-    <div className="relative h-6 border-b border-border bg-muted/30 shrink-0">
+    <div className="relative h-6 shrink-0">
       {markers.map(({ time, isMajor }, index) => {
         const position = duration > 0 ? (time / duration) * 100 : 0;
         const isFirst = index === 0;
@@ -56,12 +56,12 @@ export function TimelineRuler({ duration, zoom }: TimelineRulerProps) {
           >
             <div
               className={`w-px ${
-                isMajor ? 'h-2.5 bg-muted-foreground/50' : 'h-1.5 bg-muted-foreground/30'
+                isMajor ? 'h-2 bg-black/20' : 'h-1.5 bg-black/10'
               }`}
             />
             {isMajor && (
               <span
-                className="absolute top-2.5 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
+                className="absolute top-2 text-[11px] tabular-nums text-faint whitespace-nowrap"
                 style={{
                   transform: isFirst ? 'translateX(0)' : isLast ? 'translateX(-100%)' : 'translateX(-50%)',
                 }}

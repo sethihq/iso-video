@@ -6,21 +6,17 @@ import { KeyboardShortcutsModal } from '@/components/editor/keyboard-shortcuts-m
 
 export default function EditorPage() {
   return (
-    <div className="flex h-screen max-h-screen flex-col bg-muted/40 overflow-hidden p-3 gap-3">
+    <>
       {/* Saved project, keyboard shortcuts and music playback */}
       <EditorRuntime />
       <KeyboardShortcutsModal />
 
-      {/* Header - floating */}
-      <Header />
-
-      {/* Main Editor Area - takes remaining space */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Panels sit straight on the page: top bar, the three columns, then the timeline */}
+      <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 overflow-hidden bg-background px-2 pb-2 select-none">
+        <Header />
         <EditorLayout />
+        <Timeline />
       </div>
-
-      {/* Bottom - Timeline (fixed height) */}
-      <Timeline />
-    </div>
+    </>
   );
 }

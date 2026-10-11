@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Keyboard } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import { IconButton, SectionTitle } from './ui';
 
 const SHORTCUTS = [
   { category: 'Playback', items: [
@@ -27,6 +29,10 @@ const SHORTCUTS = [
     { keys: ['?'], description: 'Show keyboard shortcuts' },
   ]},
 ];
+
+// A key cap: white, lifted off the panel by a hairline and a bottom edge
+const KEY_CAP =
+  'squircle inline-grid h-6 min-w-6 place-items-center rounded-[7px] bg-white px-1.5 text-[12px] font-medium text-foreground shadow-[0_1px_0_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.06)]';
 
 export function KeyboardShortcutsModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -71,7 +77,7 @@ export function KeyboardShortcutsModal() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/20"
             onClick={() => setIsOpen(false)}
           />
 
@@ -82,46 +88,43 @@ export function KeyboardShortcutsModal() {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15 }}
             className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcuts-title"
           >
-            <div className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden">
+            {/* No overflow clip here, so the close button's tooltip can spill past the corner */}
+            <div className="squircle rounded-[22px] bg-card shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_24px_60px_-20px_rgba(0,0,0,0.35)]">
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <Keyboard className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="text-sm font-medium">Keyboard Shortcuts</h2>
+              <div className="flex items-center justify-between gap-3 px-5 pt-5">
+                <div className="flex items-center gap-2.5">
+                  <Keyboard className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <h2 id="shortcuts-title" className="text-[15px] font-semibold text-foreground">Keyboard Shortcuts</h2>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                >
-                  <X className="h-4 w-4 text-muted-foreground" />
-                </button>
+                <IconButton label="Close" shortcut="Esc" size="sm" onClick={() => setIsOpen(false)}>
+                  <X className="size-4" aria-hidden="true" />
+                </IconButton>
               </div>
 
               {/* Content */}
-              <div className="p-5 space-y-5 max-h-[60vh] overflow-y-auto">
+              <div className="scroll-slim max-h-[60vh] space-y-4 overflow-y-auto px-5 py-3">
                 {SHORTCUTS.map((category) => (
                   <div key={category.category}>
-                    <h3 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                      {category.category}
-                    </h3>
-                    <div className="space-y-1.5">
-                      {category.items.map((shortcut, index) => (
+                    <SectionTitle>{category.category}</SectionTitle>
+                    <div>
+                      {category.items.map((shortcut) => (
                         <div
-                          key={index}
-                          className="flex items-center justify-between py-1"
+                          key={shortcut.description}
+                          className="flex min-h-8 items-center justify-between gap-3"
                         >
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-[13px] text-foreground">
                             {shortcut.description}
                           </span>
-                          <div className="flex items-center gap-1">
+                          <div className="flex shrink-0 items-center gap-1">
                             {shortcut.keys.map((key, keyIndex) => (
-                              <span key={keyIndex}>
-                                <kbd className="inline-flex items-center justify-center min-w-[24px] h-6 px-2 text-xs font-mono bg-muted border border-border rounded shadow-sm">
-                                  {key}
-                                </kbd>
+                              <span key={key} className="flex items-center gap-1">
+                                <kbd className={KEY_CAP}>{key}</kbd>
                                 {keyIndex < shortcut.keys.length - 1 && (
-                                  <span className="text-muted-foreground mx-1">+</span>
+                                  <span className="text-[12px] text-faint">+</span>
                                 )}
                               </span>
                             ))}
@@ -134,9 +137,11 @@ export function KeyboardShortcutsModal() {
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3 border-t border-border bg-muted/30">
-                <p className="text-[11px] text-muted-foreground text-center">
-                  Press <kbd className="px-1.5 py-0.5 text-[10px] bg-muted border border-border rounded font-mono">Esc</kbd> or click outside to close
+              <div className="px-5 pt-1 pb-5">
+                <p className="text-center text-[12px] text-faint">
+                  Press{' '}
+                  <kbd className={cn(KEY_CAP, 'h-5 min-w-5 rounded-[6px] px-1 align-middle text-[11px]')}>Esc</kbd>{' '}
+                  or click outside to close
                 </p>
               </div>
             </div>

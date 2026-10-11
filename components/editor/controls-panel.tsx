@@ -12,7 +12,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { CustomSlider } from '@/components/ui/custom-slider';
-import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -33,6 +32,7 @@ import {
 } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
+import { FieldLabel, IconButton, SectionTitle, TabSwitch } from './ui';
 
 const CAMERA_DIRECTION_OPTIONS: { value: CameraMoveDirection; label: string }[] = [
   { value: 'top-to-bottom', label: 'Top to Bottom' },
@@ -64,10 +64,10 @@ const EASING_OPTIONS: { value: EasingType; label: string }[] = [
 
 type TabType = 'camera' | 'style' | 'audio';
 
-const TABS: { id: TabType; label: string }[] = [
-  { id: 'camera', label: 'Camera' },
-  { id: 'style', label: 'Style' },
-  { id: 'audio', label: 'Audio' },
+const TABS: { value: TabType; label: string }[] = [
+  { value: 'camera', label: 'Camera' },
+  { value: 'style', label: 'Style' },
+  { value: 'audio', label: 'Audio' },
 ];
 
 export function ControlsPanel() {
@@ -109,18 +109,16 @@ export function ControlsPanel() {
 
   if (!selectedScene) {
     return (
-      <div className="flex h-full w-full flex-col bg-card">
+      <div className="flex h-full w-full flex-col">
         <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <div className="space-y-3">
-            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto">
-              <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">No Scene Selected</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Select a scene to customize its appearance
-              </p>
-            </div>
+          <div className="flex flex-col items-center">
+            <span className="squircle mb-3 grid size-11 place-items-center rounded-[14px] bg-white text-muted-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_8px_20px_-10px_rgba(0,0,0,0.25)]">
+              <SlidersHorizontal className="size-4.5" aria-hidden="true" />
+            </span>
+            <p className="text-[13px] font-medium text-foreground">No scene selected</p>
+            <p className="mt-0.5 max-w-[200px] text-[12px] text-faint">
+              Select a scene to customize its appearance
+            </p>
           </div>
         </div>
       </div>
@@ -155,44 +153,13 @@ export function ControlsPanel() {
   const dofSettings = dofProjectSettings || DEFAULT_DOF;
 
   return (
-    <div className="flex h-full w-full flex-col bg-card">
-      {/* Pill Tabs */}
-      <div className="p-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-lg" role="tablist" aria-label="Controls panels">
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                id={`tab-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`tabpanel-${tab.id}`}
-                tabIndex={isActive ? 0 : -1}
-                className={cn(
-                  'relative flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                  !isActive && 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="controlsActiveTab"
-                    className="absolute inset-0 bg-card rounded-md shadow-sm"
-                    transition={{ type: 'spring', bounce: 0.15, duration: 0.5 }}
-                  />
-                )}
-                <span className={cn('relative', isActive && 'text-foreground')}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+    <div className="flex h-full w-full flex-col">
+      <div className="shrink-0 px-3 pt-3">
+        <TabSwitch label="Controls panels" value={activeTab} tabs={TABS} onChange={setActiveTab} idPrefix="controls" />
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="scroll-slim flex-1 overflow-y-auto">
         <AnimatePresence mode="wait">
           {activeTab === 'style' && (
             <motion.div
@@ -200,10 +167,10 @@ export function ControlsPanel() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
-              className="p-4 space-y-5"
+              className="space-y-4 p-3"
               role="tabpanel"
-              id="tabpanel-style"
-              aria-labelledby="tab-style"
+              id="controls-panel-style"
+              aria-labelledby="controls-tab-style"
             >
               {/* Duration */}
               <Section title="Duration">
@@ -228,9 +195,9 @@ export function ControlsPanel() {
                       size="sm"
                       onClick={() => handlePresetApply(preset.id)}
                       className={cn(
-                        'h-8 text-[10px] px-2',
+                        'h-8 px-2',
                         JSON.stringify(selectedScene.transform) === JSON.stringify(preset.transform) &&
-                          'border-primary bg-primary/10 text-primary'
+                          'bg-primary text-primary-foreground hover:bg-primary-press'
                       )}
                     >
                       {preset.name}
@@ -243,9 +210,9 @@ export function ControlsPanel() {
               <Section title="Transitions">
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block">Entry Animation</Label>
+                    <FieldLabel>Entry Animation</FieldLabel>
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="h-9 text-xs">
+                      <DropdownMenuTrigger>
                         {ANIMATION_OPTIONS.find((o) => o.value === selectedScene.motion.entry)?.label || 'Select'}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
@@ -262,9 +229,9 @@ export function ControlsPanel() {
                     </DropdownMenu>
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block">Exit Animation</Label>
+                    <FieldLabel>Exit Animation</FieldLabel>
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="h-9 text-xs">
+                      <DropdownMenuTrigger>
                         {ANIMATION_OPTIONS.find((o) => o.value === selectedScene.motion.exit)?.label || 'Select'}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
@@ -281,9 +248,9 @@ export function ControlsPanel() {
                     </DropdownMenu>
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block">Easing</Label>
+                    <FieldLabel>Easing</FieldLabel>
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="h-9 text-xs">
+                      <DropdownMenuTrigger>
                         {EASING_OPTIONS.find((o) => o.value === selectedScene.motion.easing)?.label || 'Select'}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
@@ -305,11 +272,11 @@ export function ControlsPanel() {
               {/* Advanced Transform */}
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                className="squircle flex h-8 w-full items-center gap-1.5 rounded-[10px] px-2 text-[12px] font-medium text-muted-foreground transition-colors duration-100 hover:bg-black/[0.04] hover:text-foreground"
                 aria-expanded={showAdvanced}
                 aria-controls="advanced-transform-section"
               >
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180')} aria-hidden="true" />
+                <ChevronDown className={cn('size-3.5 transition-transform duration-200 ease-snappy', showAdvanced && 'rotate-180')} aria-hidden="true" />
                 Advanced Transform
               </button>
 
@@ -325,8 +292,8 @@ export function ControlsPanel() {
                     <Section
                       title="3D Transform"
                       action={
-                        <Button variant="ghost" size="sm" onClick={handleReset} className="h-6 px-2 text-[10px]">
-                          <RotateCcw className="mr-1 h-3 w-3" />
+                        <Button variant="ghost" size="xs" onClick={handleReset}>
+                          <RotateCcw aria-hidden="true" />
                           Reset
                         </Button>
                       }
@@ -411,18 +378,18 @@ export function ControlsPanel() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
-              className="p-4 space-y-5"
+              className="space-y-4 p-3"
               role="tabpanel"
-              id="tabpanel-camera"
-              aria-labelledby="tab-camera"
+              id="controls-panel-camera"
+              aria-labelledby="controls-tab-camera"
             >
               {/* Scene Camera */}
               <Section title="Scene Movement">
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1 block">Direction</Label>
+                    <FieldLabel>Direction</FieldLabel>
                     <DropdownMenu>
-                      <DropdownMenuTrigger className="h-8 text-xs">
+                      <DropdownMenuTrigger>
                         {CAMERA_DIRECTION_OPTIONS.find((o) => o.value === cameraSettings.moveDirection)?.label || 'Select'}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
@@ -486,9 +453,10 @@ export function ControlsPanel() {
               {/* Depth of Field */}
               <Section title="Depth of Field">
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between py-1">
-                    <span className="text-xs text-foreground">Enable DOF</span>
+                  <div className="squircle flex h-8 items-center justify-between rounded-[10px] bg-well pl-2.5 pr-1.5">
+                    <span className="text-[12px] font-medium text-muted-foreground" aria-hidden="true">Enable DOF</span>
                     <Switch
+                      aria-label="Enable DOF"
                       checked={dofSettings.enabled}
                       onCheckedChange={(checked) => updateDOFSettings({ enabled: checked })}
                     />
@@ -526,10 +494,10 @@ export function ControlsPanel() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
-              className="p-4 space-y-5"
+              className="space-y-4 p-3"
               role="tabpanel"
-              id="tabpanel-audio"
-              aria-labelledby="tab-audio"
+              id="controls-panel-audio"
+              aria-labelledby="controls-tab-audio"
             >
               {/* Audio Upload */}
               <Section title="Background Music">
@@ -537,19 +505,17 @@ export function ControlsPanel() {
                   {audioTracks.length === 0 ? (
                     <label
                       htmlFor="audio-upload"
-                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-accent/50 transition-colors"
+                      className="squircle flex h-24 w-full cursor-pointer flex-col items-center justify-center rounded-[16px] bg-well outline-2 -outline-offset-4 outline-dashed outline-black/10 transition-colors duration-100 hover:bg-well-hover has-focus-visible:outline-solid has-focus-visible:outline-primary"
                     >
-                      <div className="flex flex-col items-center justify-center pt-3 pb-3">
-                        <Upload className="w-6 h-6 mb-1.5 text-muted-foreground" aria-hidden="true" />
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium text-foreground">Upload audio</span>
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5" id="audio-format-hint">MP3, WAV, OGG</p>
+                      <div className="flex flex-col items-center justify-center">
+                        <Upload className="mb-1.5 size-5 text-muted-foreground" aria-hidden="true" />
+                        <p className="text-[13px] font-medium text-foreground">Upload audio</p>
+                        <p className="mt-0.5 text-[11px] text-faint" id="audio-format-hint">MP3, WAV, OGG</p>
                       </div>
                       <input
                         id="audio-upload"
                         type="file"
-                        className="hidden"
+                        className="sr-only"
                         accept="audio/*"
                         aria-describedby="audio-format-hint"
                         onChange={async (e) => {
@@ -570,24 +536,26 @@ export function ControlsPanel() {
                       {audioTracks.map((track) => (
                         <div
                           key={track.id}
-                          className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border"
+                          className="squircle flex items-center gap-2.5 rounded-[14px] bg-well p-1.5 pr-1"
                         >
-                          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                            <Music className="w-4 h-4 text-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{track.name}</p>
-                            <p className="text-[10px] text-muted-foreground">
+                          <span className="squircle grid size-8 shrink-0 place-items-center rounded-[10px] bg-white text-primary-press shadow-[0_0_0_1px_rgba(0,0,0,0.05)]">
+                            <Music className="size-4" aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium">{track.name}</p>
+                            <p className="text-[12px] tabular-nums text-faint">
                               {Math.floor(track.duration / 1000)}s
                             </p>
                           </div>
-                          <button
+                          <IconButton
+                            label={`Remove ${track.name}`}
+                            size="sm"
+                            tipSide="top"
                             onClick={() => removeAudioTrack(track.id)}
-                            className="p-1.5 text-muted-foreground hover:text-destructive rounded transition-colors"
-                            aria-label={`Remove ${track.name}`}
+                            className="hover:text-destructive"
                           >
-                            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          </button>
+                            <Trash2 className="size-3.5" aria-hidden="true" />
+                          </IconButton>
                         </div>
                       ))}
                     </div>
@@ -596,7 +564,7 @@ export function ControlsPanel() {
               </Section>
 
               {audioError && (
-                <p className="text-xs text-destructive" role="alert">{audioError}</p>
+                <p className="text-[12px] text-destructive-foreground" role="alert">{audioError}</p>
               )}
 
               {/* Volume Control */}
@@ -627,28 +595,20 @@ export function ControlsPanel() {
   );
 }
 
-// Helper component for sections
+// A titled group of controls
 function Section({
   title,
-  icon: Icon,
   action,
   children,
 }: {
   title: string;
-  icon?: typeof Music;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
-          <Label className="text-xs font-medium text-foreground">{title}</Label>
-        </div>
-        {action}
-      </div>
+    <section>
+      <SectionTitle action={action}>{title}</SectionTitle>
       {children}
-    </div>
+    </section>
   );
 }

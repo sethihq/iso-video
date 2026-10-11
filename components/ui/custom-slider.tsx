@@ -32,10 +32,11 @@ export function CustomSlider({
   const labelId = useId();
   const valueId = useId();
 
+  // A gray well you drag across: the label and value sit inside it, the filled part is a shade darker
   return (
     <div className={cn('group relative', className)}>
       <SliderPrimitive.Root
-        className="relative flex h-10 w-full touch-none select-none items-center"
+        className="relative flex h-8 w-full touch-none select-none items-center"
         value={[value]}
         min={min}
         max={max}
@@ -48,52 +49,34 @@ export function CustomSlider({
         aria-labelledby={label ? labelId : undefined}
         aria-describedby={valueId}
       >
-        {/* Label */}
         {label && (
           <span
             id={labelId}
-            className="absolute left-3 z-10 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground"
+            className="pointer-events-none absolute left-2.5 z-10 text-[12px] font-medium text-muted-foreground transition-colors group-hover:text-foreground"
           >
             {label}
           </span>
         )}
 
-        {/* Value Display */}
-        <span id={valueId} className="absolute right-3 z-10 text-xs font-mono text-foreground" aria-live="polite">
+        <span
+          id={valueId}
+          className="pointer-events-none absolute right-2.5 z-10 text-[12px] tabular-nums text-foreground"
+          aria-live="polite"
+        >
           {displayValue}
-          {valueSubtext && (
-            <span className="ml-0.5 text-muted-foreground">{valueSubtext}</span>
-          )}
+          {valueSubtext && <span className="ml-0.5 text-faint">{valueSubtext}</span>}
         </span>
 
-        {/* Track */}
         <SliderPrimitive.Control
           className={cn(
-            'relative h-10 w-full cursor-grab rounded-lg border border-border bg-muted/50',
-            'transition-colors duration-150',
-            'hover:border-primary/50 hover:bg-muted',
-            'active:cursor-grabbing',
-            disabled && 'pointer-events-none opacity-50'
+            'squircle relative h-8 w-full cursor-ew-resize rounded-[10px] bg-well transition-colors duration-100 hover:bg-well-hover',
+            disabled && 'pointer-events-none opacity-40'
           )}
         >
-          <SliderPrimitive.Track className="relative h-full w-full overflow-hidden rounded-lg">
-            {/* Filled portion */}
-            <SliderPrimitive.Indicator
-              className="h-full bg-primary/20"
-              style={{ willChange: 'width' }}
-            />
-            {/* Thumb */}
+          <SliderPrimitive.Track className="relative h-full w-full overflow-hidden rounded-[10px]">
+            <SliderPrimitive.Indicator className="h-full bg-black/[0.06]" />
             <SliderPrimitive.Thumb
-              className={cn(
-                'absolute top-1/2 -translate-y-1/2 h-8 w-2 rounded-sm bg-foreground/80 shadow-sm',
-                'cursor-grab',
-                'transition-[background-color,box-shadow] duration-150',
-                'hover:bg-foreground',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                'active:cursor-grabbing',
-                disabled && 'pointer-events-none'
-              )}
-              style={{ willChange: 'left, transform' }}
+              className="absolute top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_1px_3px_rgba(0,0,0,0.2)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </SliderPrimitive.Track>
         </SliderPrimitive.Control>
