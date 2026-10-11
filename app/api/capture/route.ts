@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
-import sharp, { type OutputInfo } from 'sharp';
-import type { DetectedSection } from '@/lib/types';
-import { CAPTURE_CONTENT_TYPE, type CaptureEvent, type CapturePhase } from '@/lib/capture/events';
+import sharp from 'sharp';
+import type { DetectedSection, SectionKind } from '@/lib/types';
+import { CAPTURE_CONTENT_TYPE, CAPTURE_WIDTHS, type CaptureEvent, type CapturePhase } from '@/lib/capture/events';
 import { HARDENING_ARGS, guardPage, hostResolverRule } from '@/lib/capture/page-guard';
 import { parseCaptureUrl, resolvePublicAddress } from '@/lib/capture/url-guard';
 
@@ -13,26 +13,35 @@ export const maxDuration = 300;
 // Chromium binary URL for serverless (must match chromium-min version)
 const CHROMIUM_URL = 'https://github.com/Sparticuz/chromium/releases/download/v153.0.0/chromium-v153.0.0-pack.x64.tar';
 
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+// A current desktop Chrome, so sites don't show outdated-browser warnings
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
 
 // Every wait is bounded
 const NAVIGATION_TIMEOUT_MS = 30_000; // Until DOMContentLoaded
 const LOAD_TIMEOUT_MS = 10_000;       // Then the load event, best effort
 const SCROLL_BUDGET_MS = 8000;        // Lazy-load scroll
 const ASSET_TIMEOUT_MS = 5000;        // Images, background images and fonts
+const SCREEN_IMAGE_TIMEOUT_MS = 3000; // Images in the window, at each screen
+const SCREEN_SETTLE = { quietMs: 200, maxMs: 1500 }; // Animations, at each screen
 const PROTOCOL_TIMEOUT_MS = 60_000;   // Any single DevTools call
 
-const MAX_SECTIONS = 10;
-// Chrome rasterizes at most 16384 device px per capture and WebP stops at 16383,
-// so long pages are captured in bands no taller than this
-const MAX_BAND_PX = 16383;
-const CROP_CONCURRENCY = 2;
+// Each screen is the browser window at a desktop width, 16:10, captured at 2x so text
+// stays sharp when a screen fills the video
+const SCREEN_ASPECT = 16 / 10;
+const DEVICE_SCALE_FACTOR = 2;
+const MAX_SCREENS = 10;
+// Section tops closer than this (a fraction of the window height) share a screen
+const MIN_SCREEN_GAP = 0.5;
+// Stretches longer than this with no section top get evenly spaced screens of their own
+const MAX_SCREEN_GAP = 1.5;
+// Anything pinned to the top that is taller than this is not a header
+const MAX_HEADER_PX = 160;
 // Lossy q90 with sharp YUV subsampling: on nextjs.org text showed no visible change at
 // 4x zoom, at about a quarter of the PNG size. Lossless was 2.2x larger and 3x slower.
-const SECTION_WEBP = { quality: 90, smartSubsample: true };
+const SCREEN_WEBP = { quality: 90, smartSubsample: true };
 const THUMB_WEBP = { quality: 80, smartSubsample: true };
-const PAGE_THUMB = { width: 600, maxHeight: 1200 };
-const SECTION_THUMB = { width: 400, height: 250 };
+const PAGE_THUMB_WIDTH = 600;
+const SCREEN_THUMB = { width: 400, height: 250 };
 
 // Ads and tracking never load
 const BLOCKED_URL_PARTS = ['google-analytics', 'googletagmanager', 'facebook.com/tr', 'doubleclick.net'];
@@ -66,20 +75,9 @@ const MESSAGES = {
   busy: 'Too many captures are running. Try again in a few seconds.',
 };
 
-const NO_ANIMATIONS_CSS = `
-        *, *::before, *::after {
-          animation-duration: 0s !important;
-          animation-delay: 0s !important;
-          transition-duration: 0s !important;
-          transition-delay: 0s !important;
-        }
-      `;
-
 interface CaptureRequest {
   url: string;
-  viewportWidth?: number;
-  viewportHeight?: number;
-  deviceScaleFactor?: number;
+  viewportWidth?: number; // One of CAPTURE_WIDTHS
 }
 
 interface CaptureViewport {
@@ -88,20 +86,25 @@ interface CaptureViewport {
   deviceScaleFactor: number;
 }
 
-type RawSection = Omit<DetectedSection, 'thumbnail' | 'sectionImage' | 'pixelBounds'>;
+// A detected section and the element it was found on (null for evenly spaced fallbacks)
+type RawSection = Omit<DetectedSection, 'thumbnail' | 'sectionImage' | 'pixelBounds'> & {
+  anchor: string | null;
+};
 
-// A slice of the page taken in one screenshot, in CSS px
-interface Band {
-  top: number;
-  bottom: number;
-  sections: number[];
-  png?: Uint8Array;
+// One screen to capture: where to scroll, and the section it is labelled with
+interface Stop {
+  y: number;              // Planned scroll position, CSS px
+  anchor: string | null;  // Section element to line up with when the screen is taken
+  section: RawSection;
+  placeholder: boolean;   // Labels made up here rather than detected
 }
 
-interface DecodedBand {
-  data: Buffer;
-  info: OutputInfo;
-  top: number;
+interface EncodedScreen {
+  image: string;          // WebP data URLs
+  thumbnail: string;
+  pageThumbnail: string | null;
+  width: number;          // Device px
+  height: number;
 }
 
 type Progress = (phase: CapturePhase, progress: number) => void;
@@ -151,9 +154,6 @@ const launchBrowser = async (viewport: CaptureViewport, extraArgs: string[]): Pr
   });
 };
 
-const clamp = (value: unknown, fallback: number, min: number, max: number) =>
-  typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
-
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const toDataUrl = (webp: Buffer) => `data:image/webp;base64,${webp.toString('base64')}`;
@@ -167,15 +167,6 @@ function settle(promise: Promise<unknown>, ms: number): Promise<void> {
       resolve();
     });
   });
-}
-
-// Runs `task` for every item, at most `limit` at a time
-async function forEachLimit<T>(items: T[], limit: number, task: (item: T) => Promise<void>) {
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) await task(items[next++]);
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 function clientIp(request: NextRequest): string {
@@ -312,6 +303,90 @@ async function waitForAssets(timeoutMs: number) {
   await Promise.all([...imageLoads, ...backgroundLoads, document.fonts.ready]);
 }
 
+// Runs in the page: waits until the images in the window have loaded and decoded
+async function waitForVisibleImages(timeoutMs: number) {
+  const visible = Array.from(document.images).filter((img) => {
+    const rect = img.getBoundingClientRect();
+    return rect.width > 0 && rect.bottom > 0 && rect.top < window.innerHeight;
+  });
+  await Promise.race([
+    Promise.all(visible.map((img) => img.decode().catch(() => {}))),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+// Runs in the page: lets the window finish animating at its scroll position. Finite CSS
+// and Web Animations jump to their end state; script-driven ones get until classes and
+// inline styles stop changing for `quietMs`, at most `maxMs`.
+function settleView({ quietMs, maxMs }: { quietMs: number; maxMs: number }): Promise<void> {
+  const finishAnimations = () => {
+    for (const animation of document.getAnimations()) {
+      try {
+        // Infinite and scroll-driven animations have no end time to jump to
+        if (Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))) animation.finish();
+      } catch {
+        // Keep going if one refuses
+      }
+    }
+  };
+
+  return new Promise((resolve) => {
+    let quietTimer: ReturnType<typeof setTimeout> | undefined;
+    const done = () => {
+      clearTimeout(quietTimer);
+      clearTimeout(limitTimer);
+      observer.disconnect();
+      finishAnimations();
+      // Two frames so the end state is painted, or 250 ms if frames are throttled
+      const fallback = setTimeout(resolve, 250);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clearTimeout(fallback);
+        resolve();
+      }));
+    };
+    const onChange = () => {
+      finishAnimations();
+      clearTimeout(quietTimer);
+      quietTimer = setTimeout(done, quietMs);
+    };
+    const observer = new MutationObserver(onChange);
+    observer.observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
+    const limitTimer = setTimeout(done, maxMs);
+    onChange();
+  });
+}
+
+// Runs in the page: how far a fixed or sticky header reaches down the window
+function pinnedHeaderHeight(maxHeight: number): number {
+  let bottom = 0;
+  for (const x of [0.25, 0.5, 0.75]) {
+    for (let el = document.elementFromPoint(window.innerWidth * x, 2); el && el !== document.body; el = el.parentElement) {
+      const position = window.getComputedStyle(el).position;
+      if (position !== 'fixed' && position !== 'sticky') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.top <= 1 && rect.height <= maxHeight && rect.width >= window.innerWidth / 2) {
+        bottom = Math.max(bottom, rect.bottom);
+      }
+      break;
+    }
+  }
+  return bottom;
+}
+
+// Runs in the page: puts a section's top just below the pinned header, or scrolls to `y`.
+// Returns where the page ended up, since scrolling stops at the end of the page.
+function scrollToStop({ anchor, y, offset }: { anchor: string | null; y: number; offset: number }): number {
+  const section = anchor ? document.querySelector(`[data-iso-section="${anchor}"]`) : null;
+  const top = section ? section.getBoundingClientRect().top + window.scrollY - offset : y;
+  window.scrollTo({ top: Math.max(0, Math.round(top)), behavior: 'instant' });
+  return window.scrollY;
+}
+
 // Runs in the page: hide common popups, banners, and overlays
 function hideOverlays() {
   const selectorsToHide = [
@@ -326,6 +401,11 @@ function hideOverlays() {
     '[class*="banner"]',
     '[class*="overlay"]',
     '[class*="newsletter"]',
+    '[class*="intercom"]',
+    '[class*="crisp-client"]',
+    '[id*="intercom"]',
+    '[id*="hubspot-messages"]',
+    '[id*="drift-"]',
     '[id*="cookie"]',
     '[id*="consent"]',
     '[id*="popup"]',
@@ -367,6 +447,7 @@ function detectSections(vh: number) {
     label: string;
     bounds: { x: number; y: number; width: number; height: number };
     confidence: number;
+    anchor: string | null;
   }
   const sections: RawSection[] = [];
 
@@ -481,9 +562,14 @@ function detectSections(vh: number) {
     const isFirst = sections.length === 0 && bounds.y < vh;
     const classification = classifySection(el, isFirst);
 
+    // Marks the element, so its screen can line up with it after late layout shifts
+    const anchor = String(sections.length);
+    el.setAttribute('data-iso-section', anchor);
+
     sections.push({
       id: `section-${sections.length}`,
       bounds,
+      anchor,
       ...classification,
     });
   });
@@ -524,6 +610,7 @@ function detectSections(vh: number) {
         type,
         label,
         confidence,
+        anchor: null,
       });
     }
   }
@@ -550,33 +637,125 @@ function detectSections(vh: number) {
   }));
 }
 
-// Groups sections into bands that each fit one screenshot. The first band starts at the
-// top of the page so it also covers the page thumbnail.
-function planBands(sections: RawSection[], pageHeight: number, viewport: CaptureViewport): Band[] {
-  const maxHeight = Math.floor(MAX_BAND_PX / viewport.deviceScaleFactor);
-  const thumbHeight = Math.ceil((PAGE_THUMB.maxHeight * viewport.width) / PAGE_THUMB.width);
-  const bands: Band[] = [
-    { top: 0, bottom: Math.max(1, Math.min(pageHeight, thumbHeight, maxHeight)), sections: [] },
-  ];
+const durationFor = (type: SectionKind) => (type === 'hero' ? 4000 : type === 'footer' ? 2000 : 3000);
 
-  sections.forEach((section, index) => {
-    const top = Math.max(0, section.bounds.y);
-    const bottom = Math.min(section.bounds.y + section.bounds.height, pageHeight, top + maxHeight);
-    if (bottom <= top) return;
-
-    let band = bands[bands.length - 1];
-    if (top < band.top || bottom - band.top > maxHeight) {
-      band = { top, bottom, sections: [] };
-      bands.push(band);
-    }
-    band.bottom = Math.max(band.bottom, bottom);
-    band.sections.push(index);
-  });
-
-  return bands;
+function placeholderSection(type: SectionKind, label: string, y: number): RawSection {
+  return {
+    id: `section-${type}-${y}-${Date.now()}`,
+    type,
+    label,
+    confidence: 0.5,
+    bounds: { x: 0, y: 0, width: 0, height: 0 },
+    suggestedDuration: durationFor(type),
+    anchor: null,
+  };
 }
 
-// Loads, prepares and screenshots the page. The browser is closed when this returns.
+// At most `max` items, evenly spread; from two up it keeps the first and the last
+function spread<T>(items: T[], max: number): T[] {
+  if (items.length <= max) return items;
+  if (max === 1) return [items[Math.floor(items.length / 2)]];
+  return Array.from({ length: max }, (_, i) => items[Math.round((i * (items.length - 1)) / (max - 1))]);
+}
+
+// Picks the scroll positions to capture: the top of the page, each section's top just below
+// the pinned header, and the end of the page. Section tops close together share a screen,
+// and long stretches between them get filler screens, which are dropped first when there
+// are too many.
+function planStops(sections: RawSection[], pageHeight: number, viewport: CaptureViewport, headerOffset: number): Stop[] {
+  const maxScroll = Math.max(0, pageHeight - viewport.height);
+  const minGap = viewport.height * MIN_SCREEN_GAP;
+  const stops: Stop[] = [{ y: 0, anchor: null, section: placeholderSection('hero', 'Hero Section', 0), placeholder: true }];
+
+  for (const section of [...sections].sort((a, b) => a.bounds.y - b.bounds.y)) {
+    const y = Math.min(maxScroll, Math.max(0, section.bounds.y - headerOffset));
+    const last = stops[stops.length - 1];
+    if (y - last.y >= minGap) {
+      stops.push({ y, anchor: section.anchor, section, placeholder: false });
+    } else if (last.placeholder) {
+      // The screen keeps its position and takes the detected section's labels
+      last.section = section;
+      last.placeholder = false;
+    }
+  }
+
+  if (maxScroll - stops[stops.length - 1].y >= minGap) {
+    stops.push({ y: maxScroll, anchor: null, section: placeholderSection('footer', 'Footer', maxScroll), placeholder: true });
+  }
+
+  const filled: Stop[] = [stops[0]];
+  const fillers = new Set<Stop>();
+  for (let i = 1; i < stops.length; i++) {
+    const from = stops[i - 1].y;
+    const gap = stops[i].y - from;
+    const extra = gap > viewport.height * MAX_SCREEN_GAP ? Math.round(gap / viewport.height) - 1 : 0;
+    for (let k = 1; k <= extra; k++) {
+      const y = Math.round(from + (gap * k) / (extra + 1));
+      const filler = { y, anchor: null, section: placeholderSection('content', 'Content Section', y), placeholder: true };
+      fillers.add(filler);
+      filled.push(filler);
+    }
+    filled.push(stops[i]);
+  }
+
+  const excess = Math.min(filled.length - MAX_SCREENS, fillers.size);
+  const dropped = new Set(excess > 0 ? spread([...fillers], excess) : []);
+  return spread(filled.filter((stop) => !dropped.has(stop)), MAX_SCREENS);
+}
+
+// The height of a header pinned to the top of the window once the page has scrolled
+async function measureHeader(page: Page, viewport: CaptureViewport, pageHeight: number): Promise<number> {
+  const probe = Math.min(viewport.height, pageHeight - viewport.height);
+  if (probe <= 0) return 0;
+  await page.evaluate(scrollToStop, { anchor: null, y: probe, offset: 0 });
+  await page.evaluate(twoFrames);
+  const height = await page.evaluate(pinnedHeaderHeight, MAX_HEADER_PX);
+  return Math.round(Math.min(MAX_HEADER_PX, Math.max(0, height)));
+}
+
+// Encodes one screenshot at full size, a thumbnail for lists, and on request the page thumbnail
+async function encodeScreen(png: Uint8Array, withPageThumbnail: boolean): Promise<EncodedScreen> {
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const raw = () => sharp(data, { raw: info });
+  const [image, thumbnail, pageThumbnail] = await Promise.all([
+    raw().webp(SCREEN_WEBP).toBuffer(),
+    raw()
+      .resize(SCREEN_THUMB.width, SCREEN_THUMB.height, { fit: 'cover', position: 'top', kernel: 'lanczos3' })
+      .webp(THUMB_WEBP)
+      .toBuffer(),
+    withPageThumbnail ? raw().resize({ width: PAGE_THUMB_WIDTH, kernel: 'lanczos3' }).webp(THUMB_WEBP).toBuffer() : null,
+  ]);
+  return {
+    image: toDataUrl(image),
+    thumbnail: toDataUrl(thumbnail),
+    pageThumbnail: pageThumbnail && toDataUrl(pageThumbnail),
+    width: info.width,
+    height: info.height,
+  };
+}
+
+function toScreenSection(section: RawSection, scrollY: number, viewport: CaptureViewport, screen: EncodedScreen): DetectedSection {
+  return {
+    id: section.id,
+    type: section.type,
+    label: section.label,
+    confidence: section.confidence,
+    suggestedDuration: section.suggestedDuration,
+    bounds: { x: 0, y: scrollY, width: viewport.width, height: viewport.height },
+    thumbnail: screen.thumbnail,
+    sectionImage: screen.image,
+    pixelBounds: {
+      x: 0,
+      y: Math.round(scrollY * viewport.deviceScaleFactor),
+      width: screen.width,
+      height: screen.height,
+    },
+  };
+}
+
+// Loads the page and takes one browser-window screenshot per screen, scrolled to where a
+// visitor would see it, so sticky headers, lazy images and scroll animations look as they
+// do in a browser. The browser is closed when this returns.
 // `pinRule` maps the target host to the address the server vetted.
 async function capturePage(
   target: URL,
@@ -599,7 +778,7 @@ async function capturePage(
     if (unsafeResponse) throw new CaptureError(MESSAGES.badRequest);
   };
 
-  let shot: { sections: RawSection[]; bands: Band[]; pageHeight: number };
+  let shot: { sections: DetectedSection[]; thumbnail: string; pageHeight: number };
   try {
     checkpoint();
     progress('connect', 8);
@@ -643,43 +822,37 @@ async function capturePage(
     // Wait for lazy-loaded images, background images and fonts
     await settle(page.evaluate(waitForAssets, ASSET_TIMEOUT_MS), ASSET_TIMEOUT_MS + 1000);
     checkpoint();
-    progress('capture', 52);
+    progress('analyze', 52);
 
     await page.evaluate(hideOverlays);
-
-    // Disable animations for cleaner screenshots (best effort: a strict CSP refuses it)
-    await page.addStyleTag({ content: NO_ANIMATIONS_CSS }).catch(() => {});
-
-    // Let the page settle: two frames for the new styles, then a short network quiet period
-    await page.evaluate(twoFrames);
-    await page.waitForNetworkIdle({ idleTime: 300, timeout: 2000, signal }).catch(() => {});
-    checkpoint();
-    progress('analyze', 58);
-
-    const detectedSections = (await page.evaluate(detectSections, viewport.height)) as RawSection[];
-
-    // Get page dimensions
+    const detected = (await page.evaluate(detectSections, viewport.height)) as RawSection[];
     const pageHeight = await page.evaluate(() =>
       Math.max(document.body?.scrollHeight ?? 0, document.documentElement.scrollHeight)
     );
-    progress('analyze', 64);
+    const headerOffset = await measureHeader(page, viewport, pageHeight);
+    const stops = planStops(detected, pageHeight, viewport, headerOffset);
+    checkpoint();
+    progress('analyze', 60);
 
-    // Screenshot only what the sections and the page thumbnail need, reporting each band
-    const sections = detectedSections.slice(0, MAX_SECTIONS);
-    const bands = planBands(sections, pageHeight, viewport);
-    for (const [index, band] of bands.entries()) {
+    const sections: DetectedSection[] = [];
+    let thumbnail = '';
+    for (const [index, stop] of stops.entries()) {
       checkpoint();
-      band.png = await page.screenshot({
-        type: 'png',
-        encoding: 'binary',
-        optimizeForSpeed: true,
-        captureBeyondViewport: true,
-        clip: { x: 0, y: band.top, width: viewport.width, height: band.bottom - band.top },
-      });
-      progress('analyze', 64 + Math.round(((index + 1) / bands.length) * 6));
+      const scrollY = await page.evaluate(scrollToStop, { anchor: stop.anchor, y: stop.y, offset: headerOffset });
+      await settle(page.evaluate(settleView, SCREEN_SETTLE), SCREEN_SETTLE.maxMs + 1000);
+      await settle(page.evaluate(waitForVisibleImages, SCREEN_IMAGE_TIMEOUT_MS), SCREEN_IMAGE_TIMEOUT_MS + 1000);
+      // Cookie banners and chat bubbles can show up late
+      await settle(page.evaluate(hideOverlays), 1000);
+      checkpoint();
+
+      const png = await page.screenshot({ type: 'png', encoding: 'binary', optimizeForSpeed: true });
+      const screen = await encodeScreen(png, index === 0);
+      thumbnail ||= screen.pageThumbnail ?? '';
+      sections.push(toScreenSection(stop.section, scrollY, viewport, screen));
+      progress('detect', 64 + Math.round(((index + 1) / stops.length) * 32));
     }
 
-    shot = { sections, bands, pageHeight };
+    shot = { sections, thumbnail, pageHeight };
   } catch (error) {
     // A browser closed on purpose fails whatever call was pending; report why it was closed
     checkpoint();
@@ -694,56 +867,6 @@ async function capturePage(
   return shot;
 }
 
-// Crops one section out of its band and encodes it, plus a small thumbnail for lists
-async function renderSection(section: RawSection, band: DecodedBand, viewport: CaptureViewport): Promise<DetectedSection> {
-  const { data, info, top: bandTop } = band;
-  const scale = info.width / viewport.width;
-  const left = Math.min(Math.max(0, Math.round(section.bounds.x * scale)), info.width - 1);
-  const top = Math.min(Math.max(0, Math.round((section.bounds.y - bandTop) * scale)), info.height - 1);
-  const width = Math.min(Math.round(section.bounds.width * scale), info.width - left);
-  const height = Math.min(Math.round(section.bounds.height * scale), info.height - top);
-
-  if (width < 100 || height < 100) {
-    return { ...section };
-  }
-
-  try {
-    const crop = () => sharp(data, { raw: info }).extract({ left, top, width, height });
-    const [image, thumb] = await Promise.all([
-      crop().webp(SECTION_WEBP).toBuffer(),
-      crop()
-        .resize(SECTION_THUMB.width, SECTION_THUMB.height, { fit: 'cover', position: 'top', kernel: 'lanczos3' })
-        .webp(THUMB_WEBP)
-        .toBuffer(),
-    ]);
-
-    return {
-      ...section,
-      thumbnail: toDataUrl(thumb),
-      sectionImage: toDataUrl(image),
-      pixelBounds: { x: left, y: Math.round(bandTop * scale) + top, width, height },
-    };
-  } catch (err) {
-    console.error('Failed to generate section image:', err);
-    return { ...section };
-  }
-}
-
-// The top of the page, 600 px wide and at most 1200 px tall
-async function renderPageThumbnail(band: DecodedBand, pageHeight: number, viewport: CaptureViewport): Promise<string> {
-  const { data, info } = band;
-  const scale = info.width / viewport.width;
-  const height = Math.max(1, Math.min(PAGE_THUMB.maxHeight, Math.round(pageHeight * scale * (PAGE_THUMB.width / info.width))));
-  const sourceHeight = Math.min(info.height, Math.ceil((height * info.width) / PAGE_THUMB.width));
-
-  const thumbnail = await sharp(data, { raw: info })
-    .extract({ left: 0, top: 0, width: info.width, height: sourceHeight })
-    .resize(PAGE_THUMB.width, height, { fit: 'cover', position: 'top', kernel: 'lanczos3' })
-    .webp(THUMB_WEBP)
-    .toBuffer();
-  return toDataUrl(thumbnail);
-}
-
 async function runCapture(
   target: URL,
   url: string,
@@ -755,52 +878,18 @@ async function runCapture(
   const progress: Progress = (phase, value) => send({ type: 'progress', phase, progress: value });
   progress('connect', 2);
 
-  const { sections, bands, pageHeight } = await capturePage(target, viewport, pinRule, progress, signal);
+  const { sections, thumbnail, pageHeight } = await capturePage(target, viewport, pinRule, progress, signal);
 
-  // Each band is decoded once and its sections are cropped from the raw pixels.
-  // Sections stream out as soon as they are encoded.
-  const total = sections.length;
-  const sent = new Set<number>();
-  const sendSection = (index: number, section: DetectedSection) => {
-    sent.add(index);
-    send({ type: 'section', index, total, section });
-    progress('detect', 72 + Math.round((sent.size / Math.max(1, total)) * 26));
-  };
-  progress('detect', 72);
-
-  let thumbnail = '';
-  let width = Math.round(viewport.width * viewport.deviceScaleFactor);
-  for (const [bandIndex, band] of bands.entries()) {
-    signal.throwIfAborted();
-    if (!band.png) continue;
-    const { data, info } = await sharp(band.png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-    band.png = undefined;
-    const decoded: DecodedBand = { data, info, top: band.top };
-
-    if (bandIndex === 0) {
-      width = info.width;
-      thumbnail = await renderPageThumbnail(decoded, pageHeight, viewport);
-    }
-
-    await forEachLimit(band.sections, CROP_CONCURRENCY, async (index) => {
-      const section = await renderSection(sections[index], decoded, viewport);
-      signal.throwIfAborted();
-      sendSection(index, section);
-    });
-  }
-
-  // Sections outside every band (empty, or below the page) keep their data without images
-  sections.forEach((section, index) => {
-    if (!sent.has(index)) sendSection(index, { ...section });
-  });
-
+  // Screens go out only once the browser is closed and every response has been checked
+  const width = Math.round(viewport.width * viewport.deviceScaleFactor);
+  sections.forEach((section, index) => send({ type: 'section', index, total: sections.length, section }));
   send({
     type: 'done',
     page: {
       url,
       thumbnail,
       width,
-      height: Math.round(pageHeight * (width / viewport.width)),
+      height: Math.round(pageHeight * viewport.deviceScaleFactor),
       pageHeight,
       deviceScaleFactor: viewport.deviceScaleFactor,
     },
@@ -840,10 +929,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const width = CAPTURE_WIDTHS.find((option) => option === body.viewportWidth) ?? CAPTURE_WIDTHS[0];
   const viewport: CaptureViewport = {
-    width: Math.round(clamp(body.viewportWidth, 1440, 320, 2560)),
-    height: Math.round(clamp(body.viewportHeight, 900, 480, 1600)),
-    deviceScaleFactor: clamp(body.deviceScaleFactor, 2, 1, 2), // High DPI for crisp screenshots
+    width,
+    height: Math.round(width / SCREEN_ASPECT),
+    deviceScaleFactor: DEVICE_SCALE_FACTOR,
   };
 
   // Stop working as soon as the client goes away

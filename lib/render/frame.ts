@@ -48,6 +48,9 @@ const SHADOW = { offsetY: 40, blur: 70, spread: -20, opacity: 0.55 };
 const VIGNETTE = { strength: 0.15, size: 90 };
 // Horizontal pans zoom the section slightly so there is room to move
 const HORIZONTAL_PAN_ZOOM = 1.2;
+// Images at least this wide for their height are screens and show whole; taller ones
+// (full-page uploads) show a window the size of the frame that pans down them
+const SCREEN_MIN_ASPECT = 1.2;
 
 export interface CardLayer {
   sceneId: string;
@@ -247,7 +250,7 @@ function buildLayer(input: LayerInput): CardLayer {
   const imageWidth = width * (horizontal ? HORIZONTAL_PAN_ZOOM : 1);
   const imageHeight = imageWidth / imageAspect;
   const cardWidth = width;
-  const cardHeight = Math.min(height, imageHeight);
+  const cardHeight = imageAspect >= SCREEN_MIN_ASPECT ? width / imageAspect : Math.min(height, imageHeight);
   const uvWidth = cardWidth / imageWidth;
   const uvHeight = cardHeight / imageHeight;
 

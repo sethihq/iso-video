@@ -3,6 +3,10 @@ import type { DetectedSection } from '@/lib/types';
 
 export const CAPTURE_CONTENT_TYPE = 'application/x-ndjson';
 
+// Desktop window widths a capture can use, in CSS px. The first is the default.
+export const CAPTURE_WIDTHS = [1440, 1280] as const;
+export type CaptureWidth = (typeof CAPTURE_WIDTHS)[number];
+
 // Matches the phase ids shown by the URL panel, in order
 export type CapturePhase = 'connect' | 'capture' | 'analyze' | 'detect';
 
